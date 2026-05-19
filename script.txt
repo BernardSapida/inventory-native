@@ -1,0 +1,30 @@
+# Building .apk using cloud
+npm install -g eas-cli
+eas login
+eas build --profile preview --platform android
+
+# Building .apk on device
+npx expo prebuild --platform android
+cd android
+.\gradlew assembleRelease
+.\gradlew release
+.\gradlew stop
+.\gradlew clean
+
+# Version of ndk for gradle
+/android/build.gradle
+ext {
+    ndkVersion = "30.0.14904198"
+}
+
+# Getting ip address
+ipconfig
+IPv4 Address
+
+# Github force push
+git checkout --orphan fresh-start
+git add -A
+git commit -m "initial commit"
+git branch -D master
+git branch -m master
+git push origin master --force
