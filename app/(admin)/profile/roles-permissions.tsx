@@ -1,5 +1,5 @@
-import { useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Switch } from 'react-native';
+import { useMemo, useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Switch, ScrollView } from 'react-native';
 import { useAppDialog } from '@/lib/dialog';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -51,13 +51,25 @@ export default function RolesPermissions() {
   const [perms, setPerms] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const isDirty = useRef(false);
 
   useEffect(() => {
     const unsub = watchActiveStaff((data) => { setStaff(data); setIsLoading(false); });
     return unsub;
   }, []);
 
+  // Keep selected + perms in sync with Firestore when not mid-edit
+  useEffect(() => {
+    if (!selected || isDirty.current) return;
+    const updated = staff.find((s) => s.uid === selected.uid);
+    if (updated) {
+      setSelected(updated);
+      setPerms({ ...updated.permissions });
+    }
+  }, [staff]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function selectStaff(s: AppUser) {
+    isDirty.current = false;
     setSelected(s);
     setPerms({ ...s.permissions });
   }
@@ -67,13 +79,17 @@ export default function RolesPermissions() {
     setSaving(true);
     try {
       await updatePermissions(selected.uid, perms);
+      isDirty.current = false;
       showAlert('Saved', `Permissions updated for ${selected.fullName}.`);
+    } catch {
+      showAlert('Error', 'Failed to save permissions. Please try again.');
     } finally {
       setSaving(false);
     }
   }
 
   function applyPreset(name: string) {
+    isDirty.current = true;
     setPerms({ ...PRESETS[name] });
   }
 
@@ -88,7 +104,7 @@ export default function RolesPermissions() {
           <View style={{ width: 28 }} />
         </View>
 
-        <View style={{ paddingHorizontal: 20 }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
           <Text style={styles.sectionLabel}>PRESETS</Text>
           <View style={styles.presetRow}>
             {Object.keys(PRESETS).map((p) => (
@@ -104,7 +120,7 @@ export default function RolesPermissions() {
               <Text style={styles.permLabel}>{perm.label}</Text>
               <Switch
                 value={perms[perm.key] ?? false}
-                onValueChange={(v) => setPerms((p) => ({ ...p, [perm.key]: v }))}
+                onValueChange={(v) => { isDirty.current = true; setPerms((p) => ({ ...p, [perm.key]: v })); }}
                 trackColor={{ true: C.brand }}
                 thumbColor="#fff"
               />
@@ -114,7 +130,7 @@ export default function RolesPermissions() {
           <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
             {saving ? <Spinner size="sm" /> : <Text style={styles.saveBtnText}>Save Permissions</Text>}
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
     );
   }
