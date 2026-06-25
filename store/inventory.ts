@@ -12,7 +12,7 @@ interface InventoryStore {
   isLoading: boolean;
   error: string | null;
   fetchInventory: () => Promise<void>;
-  addToInventory: (detections: Detection[]) => Promise<void>;
+  addToInventory: (detections: Detection[], addedBy?: string) => Promise<void>;
   removeItem: (id: number) => Promise<void>;
 }
 
@@ -33,7 +33,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     }
   },
 
-  addToInventory: async (detections: Detection[]) => {
+  addToInventory: async (detections: Detection[], addedBy?: string) => {
     const items = detections.map((d) => ({
       name: d.name,
       quantity: d.quantity,
@@ -41,7 +41,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       category: d.category,
       expirationDate: d.expirationDate,
     }));
-    await saveInventory(items);
+    await saveInventory(items, addedBy);
     await get().fetchInventory();
   },
 

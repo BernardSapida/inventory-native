@@ -1,7 +1,7 @@
 import { C, ColorPalette, useColors } from '@/lib/constants';
-import { watchInventoryItems } from '@/lib/firebase/inventory';
+import { watchInventory } from '@/lib/firebase/products';
 import { watchNotificationsForRole } from '@/lib/firebase/notifications';
-import { FirestoreInventoryItem } from '@/lib/types/inventory';
+import { type ProductWithBatches } from '@/lib/types/product';
 import { AppNotification } from '@/lib/types/notification';
 import { useAuthStore } from '@/store/auth';
 import { Feather } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { Spinner } from 'heroui-native';
 import { useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import ScreenHeader from '@/components/ScreenHeader';
 
 type Styles = ReturnType<typeof makeStyles>;
 
@@ -19,44 +20,45 @@ export default function AdminDashboard() {
   const { user } = useAuthStore();
   const palette = useColors();
   const styles = useMemo(() => makeStyles(palette), [palette]);
-  const [items, setItems] = useState<FirestoreInventoryItem[]>([]);
+  const [rows, setRows] = useState<ProductWithBatches[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let loaded = 0;
     const check = () => { if (++loaded >= 2) setIsLoading(false); };
-    const unsubInv = watchInventoryItems((data) => { setItems(data); check(); });
+    const unsubInv = watchInventory((data) => { setRows(data); check(); });
     const unsubNotif = watchNotificationsForRole('admin', (data) => { setNotifications(data); check(); });
     return () => { unsubInv(); unsubNotif(); };
   }, []);
 
-  const low = items.filter((i) => i.status === 'low');
-  const out = items.filter((i) => i.status === 'out');
-  const expiring = items.filter(
-    (i) => i.expirationDate
-      && differenceInDays(i.expirationDate, new Date()) <= 7
-      && differenceInDays(i.expirationDate, new Date()) >= 0
-  );
+  const low = rows.filter((r) => r.status === 'low');
+  const out = rows.filter((r) => r.status === 'out');
+  const expiring = rows.filter((r) => {
+    if (!r.nearestExpiry) return false;
+    const days = differenceInDays(r.nearestExpiry.toDate(), new Date());
+    return days <= 7 && days >= 0;
+  });
   const needsAction = low.length + out.length + expiring.length;
 
   const priorityIds = new Set<string>();
-  const priorityItems: FirestoreInventoryItem[] = [];
+  const priorityItems: ProductWithBatches[] = [];
   for (const item of [...out, ...low, ...expiring]) {
-    if (!priorityIds.has(item.id)) {
-      priorityIds.add(item.id);
+    if (!priorityIds.has(item.product.id)) {
+      priorityIds.add(item.product.id);
       priorityItems.push(item);
     }
     if (priorityItems.length >= 6) break;
   }
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={false} tintColor={C.brand} />}
-    >
+    <View style={styles.root}>
+      <ScreenHeader title="Dashboard" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={false} tintColor={C.brand} />}
+      >
       {/* ── Gradient Hero Header ── */}
       <LinearGradient
         colors={['#F97316', '#EA580C']}
@@ -87,7 +89,7 @@ export default function AdminDashboard() {
         </View>
 
         <View style={styles.heroStats}>
-          <HeroStat label="Total" value={items.length} styles={styles} />
+          <HeroStat label="Total" value={rows.length} styles={styles} />
           <View style={styles.heroStatDivider} />
           <HeroStat label="Low Stock" value={low.length} styles={styles} />
           <View style={styles.heroStatDivider} />
@@ -112,7 +114,7 @@ export default function AdminDashboard() {
         <>
           <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>OVERVIEW</Text>
           <View style={styles.statsGrid}>
-            <StatCard icon="package" label="Total Items" value={items.length} color={C.info}
+            <StatCard icon="package" label="Total Items" value={rows.length} color={C.info}
               action="View All" onAction={() => router.push('/(admin)/inventory')} styles={styles} />
             <StatCard icon="alert-triangle" label="Low Stock" value={low.length} color={C.warning}
               action="Manage" onAction={() => router.push('/(admin)/inventory')} styles={styles} />
@@ -141,9 +143,10 @@ export default function AdminDashboard() {
               </View>
               {priorityItems.map((item) => {
                 const ds = getPriorityDisplayStatus(item);
+                const expDate = item.nearestExpiry?.toDate?.();
                 return (
                   <TouchableOpacity
-                    key={item.id}
+                    key={item.product.id}
                     style={styles.priorityCard}
                     onPress={() => router.push('/(admin)/inventory')}
                     activeOpacity={0.8}
@@ -152,14 +155,14 @@ export default function AdminDashboard() {
                       <Feather name="package" size={20} color={C.brand} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.priorityName}>{item.name}</Text>
-                      <Text style={styles.priorityMeta}>{item.category} · {item.unit}</Text>
-                      {item.expirationDate && (
-                        <Text style={styles.priorityExpiry}>Exp: {format(item.expirationDate, 'MMM d')}</Text>
+                      <Text style={styles.priorityName}>{item.product.name}</Text>
+                      <Text style={styles.priorityMeta}>{item.product.category} · {item.product.displayUnit}</Text>
+                      {expDate && (
+                        <Text style={styles.priorityExpiry}>Exp: {format(expDate, 'MMM d')}</Text>
                       )}
                     </View>
                     <View style={styles.priorityRight}>
-                      <Text style={styles.priorityQty}>{item.quantity} {item.unit}</Text>
+                      <Text style={styles.priorityQty}>{item.onHand} {item.product.displayUnit}</Text>
                       <View style={[styles.statusPill, { backgroundColor: statusBg(ds) }]}>
                         <Text style={[styles.statusText, { color: statusColor(ds) }]}>
                           {statusLabel(ds)}
@@ -188,7 +191,8 @@ export default function AdminDashboard() {
           )}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -240,9 +244,9 @@ function notifColor(type: string) {
   return C.textSec;
 }
 
-function getPriorityDisplayStatus(item: FirestoreInventoryItem) {
-  if (item.expirationDate) {
-    const days = differenceInDays(item.expirationDate, new Date());
+function getPriorityDisplayStatus(item: ProductWithBatches) {
+  if (item.nearestExpiry) {
+    const days = differenceInDays(item.nearestExpiry.toDate(), new Date());
     if (days <= 7 && days >= 0) return 'expiring';
   }
   return item.status;
@@ -274,7 +278,7 @@ function makeStyles(C: ColorPalette) {
     root: { flex: 1, backgroundColor: C.bg },
     content: { paddingBottom: 32 },
 
-    heroCard: { marginHorizontal: 20, marginTop: 56, borderRadius: 20, padding: 20, overflow: 'hidden', marginBottom: 20 },
+    heroCard: { marginHorizontal: 20, marginTop: 4, borderRadius: 20, padding: 20, overflow: 'hidden', marginBottom: 20 },
     circle1: { position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: 'rgba(255,255,255,0.08)', top: -40, right: -30 },
     circle2: { position: 'absolute', width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(255,255,255,0.06)', bottom: -20, left: 60 },
     heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },

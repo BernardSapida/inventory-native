@@ -15,6 +15,7 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Spinner } from 'heroui-native';
 import { signIn } from '@/lib/firebase/auth';
 import { useColors, ColorPalette } from '@/lib/constants';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -52,7 +53,7 @@ export default function LoginScreen() {
         <View style={styles.card}>
           {/* Logo placeholder */}
           <View style={styles.logoBox}>
-            <Feather name="box" size={48} color={C.brand} />
+            <BrandLogo size={48} color={C.brand} />
             <Text style={styles.appName}>SmartStock</Text>
           </View>
 

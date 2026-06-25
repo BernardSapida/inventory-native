@@ -1,73 +1,110 @@
-import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from './config';
 import { ForecastResult } from '@/lib/types/forecast';
+import { toBaseUnit } from '@/lib/types/product';
 import { logger } from '@/lib/logger';
 import { newOperationId, errorMeta } from './errors';
 
-export async function generateWeeklyForecast(): Promise<ForecastResult[]> {
+// Same window as the admin web forecast page so both apps agree.
+const WINDOW_DAYS = 30;
+
+interface ForecastIngredient {
+  name: string;
+  quantityPerServing: number;
+  unit: string;
+}
+
+/**
+ * Build the forecast from the SAME data the admin web uses:
+ *   products + inventory_batches (on-hand) and the last 30 days of
+ *   `preparations` -> recipes -> ingredients (consumption, base-unit aware).
+ * Returns ingredients with tracked consumption, soonest-to-run-out first.
+ */
+export async function generateForecast(): Promise<ForecastResult[]> {
   const operationId = newOperationId();
   try {
-    const logsQuery = query(
-      collection(db, 'inventory_logs'),
-      orderBy('createdAt', 'desc'),
-      limit(200)
-    );
-    const [logsSnap, invSnap] = await Promise.all([
-      getDocs(logsQuery),
-      getDocs(collection(db, 'inventory')),
+    const [prodSnap, batchSnap, recipeSnap, prepSnap] = await Promise.all([
+      getDocs(collection(db, 'products')),
+      getDocs(collection(db, 'inventory_batches')),
+      getDocs(collection(db, 'recipes')),
+      getDocs(collection(db, 'preparations')),
     ]);
 
-    const itemMap = new Map<string, { name: string; quantity: number; threshold: number }>();
-    invSnap.forEach((d) => {
+    // On-hand per product = sum of its batch quantities (already in base unit).
+    const onHandByProduct = new Map<string, number>();
+    batchSnap.forEach((d) => {
       const data = d.data();
-      itemMap.set(d.id, {
-        name: (data.name as string) ?? '',
-        quantity: Number(data.quantity ?? 0),
-        threshold: Number(data.minimumThreshold ?? 0),
+      const pid = (data.productId as string) ?? '';
+      onHandByProduct.set(pid, (onHandByProduct.get(pid) ?? 0) + Number(data.quantity ?? 0));
+    });
+
+    // Recipes by id, with normalised ingredient fields (matches recipes.ts).
+    const recipeById = new Map<string, ForecastIngredient[]>();
+    recipeSnap.forEach((d) => {
+      const data = d.data();
+      const ingredients = ((data.ingredients as unknown[]) ?? []).map((i) => {
+        const ing = i as Record<string, unknown>;
+        return {
+          name: (ing.name as string) ?? (ing.itemName as string) ?? '',
+          quantityPerServing: Number(ing.quantityPerServing ?? ing.quantity ?? 0),
+          unit: (ing.unit as string) ?? 'pcs',
+        };
       });
+      recipeById.set(d.id, ingredients);
     });
 
-    const usageMap = new Map<string, { total: number; days: Set<string> }>();
-    logsSnap.forEach((d) => {
+    // Accumulate base-unit consumption per ingredient name over the window.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - WINDOW_DAYS);
+    cutoff.setHours(0, 0, 0, 0);
+
+    const consumed = new Map<string, number>();
+    prepSnap.forEach((d) => {
       const data = d.data();
-      const action = (data.action as string) ?? '';
-      if (action !== 'recipe_used' && action !== 'adjusted') return;
-      const change = Number(data.quantityChanged ?? 0);
-      if (change >= 0) return;
-
-      const itemId = (data.itemId as string) ?? '';
-      const date = data.createdAt
-        ? (data.createdAt as { toDate: () => Date }).toDate().toDateString()
-        : 'unknown';
-
-      if (!usageMap.has(itemId)) usageMap.set(itemId, { total: 0, days: new Set() });
-      const entry = usageMap.get(itemId)!;
-      entry.total += Math.abs(change);
-      entry.days.add(date);
+      const dateStr = (data.date as string) ?? '';
+      const prepDate = dateStr ? new Date(dateStr) : null;
+      if (!prepDate || prepDate < cutoff) return;
+      const ingredients = recipeById.get((data.recipeId as string) ?? '');
+      if (!ingredients) return;
+      const servings = Number(data.servings ?? 0);
+      for (const ing of ingredients) {
+        if (ing.quantityPerServing <= 0) continue;
+        const base = toBaseUnit(ing.quantityPerServing * servings, ing.unit);
+        const key = ing.name.trim().toLowerCase();
+        consumed.set(key, (consumed.get(key) ?? 0) + base);
+      }
     });
 
+    // One row per product that has tracked consumption.
     const results: ForecastResult[] = [];
-    for (const [itemId, item] of itemMap) {
-      const usage = usageMap.get(itemId);
-      const avgDaily = usage && usage.days.size > 0 ? usage.total / usage.days.size : 0;
-      const predicted = Math.ceil(avgDaily * 7);
-      const recommended = Math.max(0, predicted - item.quantity);
+    prodSnap.forEach((d) => {
+      const data = d.data();
+      const name = (data.name as string) ?? '';
+      const avgBase = (consumed.get(name.trim().toLowerCase()) ?? 0) / WINDOW_DAYS;
+      if (avgBase <= 0) return; // admin filters out ingredients with no usage
+      const onHand = onHandByProduct.get(d.id) ?? 0;
       results.push({
-        itemId,
-        itemName: item.name,
-        currentQuantity: item.quantity,
-        averageDailyUsage: Math.round(avgDaily * 100) / 100,
-        predictedWeeklyDemand: predicted,
-        recommendedRestock: recommended,
-        lowRisk: item.quantity >= item.threshold,
+        id: d.id,
+        name,
+        category: (data.category as string) ?? 'Uncategorized',
+        displayUnit: (data.displayUnit as string) ?? 'pcs',
+        onHand,
+        avgPerDayBase: avgBase,
+        daysLeft: avgBase > 0 ? Math.floor(onHand / avgBase) : null,
       });
-    }
+    });
 
-    const sorted = results.sort((a, b) => b.recommendedRestock - a.recommendedRestock);
-    logger.info({ message: 'Weekly forecast generated', operationId, operation: 'forecasting.generateWeeklyForecast', itemCount: sorted.length });
+    const sorted = results.sort((a, b) => {
+      if (a.daysLeft === null && b.daysLeft === null) return 0;
+      if (a.daysLeft === null) return 1;
+      if (b.daysLeft === null) return -1;
+      return a.daysLeft - b.daysLeft;
+    });
+
+    logger.info({ message: 'Forecast generated', operationId, operation: 'forecasting.generateForecast', itemCount: sorted.length });
     return sorted;
   } catch (err: unknown) {
-    logger.error({ message: 'Generate weekly forecast failed', operationId, operation: 'forecasting.generateWeeklyForecast', ...errorMeta(err) });
+    logger.error({ message: 'Generate forecast failed', operationId, operation: 'forecasting.generateForecast', ...errorMeta(err) });
     throw err;
   }
 }

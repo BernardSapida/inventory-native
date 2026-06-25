@@ -36,7 +36,7 @@ const C = {
 const FILTER_CHIPS = ["All", "General", "Protein", "Dry Goods"] as const;
 
 function formatExpiry(dateStr: string): string {
-  if (!dateStr) return "—";
+  if (!dateStr) return "-";
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString("en-US", {
@@ -75,7 +75,12 @@ export default function StockManagementScreen() {
   );
 
   const handleDelete = (id: number, name: string) => {
-    showConfirm('Delete Item', `Remove "${name}" from inventory?`, () => removeItem(id), 'Delete');
+    showConfirm(
+      "Delete Item",
+      `Remove "${name}" from inventory?`,
+      () => removeItem(id),
+      "Delete",
+    );
   };
 
   return (
@@ -100,7 +105,10 @@ export default function StockManagementScreen() {
             onChangeText={setSearch}
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSearch("")}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
               <Feather name="x" size={16} color={C.textSec} />
             </TouchableOpacity>
           )}
@@ -171,10 +179,10 @@ export default function StockManagementScreen() {
 
                   <View style={styles.middle}>
                     <Text style={styles.itemName} numberOfLines={1}>
-                      {item.name || "—"}
+                      {item.name || "-"}
                     </Text>
                     <Text style={styles.itemMeta}>
-                      {item.category || "—"} · {item.unit || "—"}
+                      {item.category || "-"} · {item.unit || "-"}
                     </Text>
                     <Text style={styles.itemExpiry}>
                       {item.expirationDate
@@ -185,7 +193,7 @@ export default function StockManagementScreen() {
 
                   <View style={styles.right}>
                     <Text style={styles.itemQty}>
-                      {item.quantity ?? "—"} {item.unit || ""}
+                      {item.quantity ?? "-"} {item.unit || ""}
                     </Text>
                     <View
                       style={

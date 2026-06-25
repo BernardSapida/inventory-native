@@ -1,7 +1,6 @@
 export interface RecipeIngredient {
-  itemId: string;
-  itemName: string;
-  quantity: number;
+  name: string;             // matched to product by name (case-insensitive)
+  quantityPerServing: number;
   unit: string;
 }
 
@@ -14,14 +13,15 @@ export interface RecipeModel {
   ingredients: RecipeIngredient[];
   createdAt?: Date;
   createdBy: string;
+  updatedAt?: Date;
 }
 
 export const RECIPE_CATEGORIES = [
-  'Breakfast',
-  'Lunch',
-  'Dinner',
-  'Dessert',
-  'Beverage',
-  'Snack',
-  'General',
+  "Appetizer",
+  "Main Course",
+  "Side Dish",
+  "Soup",
+  "Salad",
+  "Dessert",
+  "Beverage",
 ];

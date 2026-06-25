@@ -31,7 +31,7 @@ function daysLabel(daysLeft: number | null): string {
   return `~${daysLeft} days`;
 }
 
-export default function ForecastingScreen() {
+export default function StaffForecastingScreen() {
   const palette = useColors();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [rows, setRows] = useState<ForecastResult[]>([]);

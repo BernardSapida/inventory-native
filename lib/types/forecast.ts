@@ -1,23 +1,14 @@
+// Forecast model - MATCHES smartstock-admin's forecast page. Consumption is
+// derived from the last 30 days of `preparations` (recipe production history),
+// converted to each product's base unit, to estimate how long current on-hand
+// stock will last.
+
 export interface ForecastResult {
-  itemId: string;
-  itemName: string;
-  currentQuantity: number;
-  averageDailyUsage: number;
-  predictedWeeklyDemand: number;
-  recommendedRestock: number;
-  lowRisk: boolean;
-}
-
-export type AvailabilityLabel = 'Unavailable' | 'At Risk' | 'Limited' | 'Available';
-
-export interface AiAvailabilityInsight {
-  itemId: string;
-  itemName: string;
-  currentQuantity: number;
-  averageDailyUsage: number;
-  predictedWeeklyDemand: number;
-  recommendedRestock: number;
-  confidenceScore: number;
-  availabilityLabel: AvailabilityLabel;
-  message: string;
+  id: string;
+  name: string;
+  category: string;
+  displayUnit: string;
+  onHand: number; // base unit (g / ml / piece)
+  avgPerDayBase: number; // average daily consumption in base unit
+  daysLeft: number | null; // floor(onHand / avgPerDay); null when no consumption
 }

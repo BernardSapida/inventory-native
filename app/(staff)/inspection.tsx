@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput,
   KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
+import ScreenHeader from '@/components/ScreenHeader';
 import { useAppDialog } from '@/lib/dialog';
 import { Feather } from '@expo/vector-icons';
 import { Spinner } from 'heroui-native';
@@ -58,9 +59,7 @@ export default function StaffInspection() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Inspections</Text>
-      </View>
+      <ScreenHeader title="Inspections" />
 
       {isLoading ? (
         <View style={styles.center}><Spinner size="lg" /></View>
@@ -157,8 +156,6 @@ export default function StaffInspection() {
 function makeStyles(C: ColorPalette) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: C.bg },
-    header: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 },
-    headerTitle: { color: C.text, fontSize: 22, fontWeight: '700' },
     list: { paddingHorizontal: 20, paddingBottom: 100 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, gap: 12 },
     emptyText: { color: C.textSec, fontSize: 14 },

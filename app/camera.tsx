@@ -1,6 +1,7 @@
 import type { Detection } from "@/lib/api";
 import { scanImage } from "@/lib/api";
 import { useAppDialog } from "@/lib/dialog";
+import { useAuthStore } from "@/store/auth";
 import { useInventoryStore } from "@/store/inventory";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
@@ -20,11 +21,20 @@ import Svg, { G, Rect, Text as SvgText } from "react-native-svg";
 const CONFIDENCE_THRESHOLD = 0.5;
 const POLL_MS = 500;
 
+function capitalize(name: string): string {
+  if (!name) return name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 function formatExpiry(dateStr: string): string {
-  if (!dateStr) return "—";
+  if (!dateStr) return "-";
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "2-digit",
+    year: "numeric",
+  });
 }
 
 export default function CameraScreen() {
@@ -43,6 +53,7 @@ export default function CameraScreen() {
   const isModalOpenRef = useRef(false);
 
   const { addToInventory } = useInventoryStore();
+  const user = useAuthStore((s) => s.user);
   const { showAlert } = useAppDialog();
 
   // Keep ref in sync so the polling closure can read it without stale state
@@ -100,12 +111,12 @@ export default function CameraScreen() {
 
   const handleConfirm = async () => {
     setIsModalOpen(false);
-    await addToInventory(lastDetections);
+    await addToInventory(lastDetections, user?.fullName);
     const count = lastDetections.length;
     showAlert(
-      'Added to Inventory',
-      `${count} item${count > 1 ? 's' : ''} added successfully.`,
-      [{ text: 'OK', onPress: () => router.back() }],
+      "Added to Inventory",
+      `${count} item${count > 1 ? "s" : ""} added successfully.`,
+      [{ text: "OK", onPress: () => router.back() }],
     );
   };
 
@@ -154,7 +165,7 @@ export default function CameraScreen() {
                 const y = box.y1 * scaleY;
                 const w = (box.x2 - box.x1) * scaleX;
                 const h = (box.y2 - box.y1) * scaleY;
-                const label = `${det.name} ${(box.confidence * 100).toFixed(0)}%`;
+                const label = `${capitalize(det.name)} ${(box.confidence * 100).toFixed(0)}%`;
                 const labelW = Math.max(label.length * 7.5, 60);
                 const labelY = Math.max(0, y - 22);
                 return (
@@ -216,7 +227,7 @@ export default function CameraScreen() {
             {detections.map((det, i) => (
               <View key={i} style={styles.chip}>
                 <Text style={styles.chipText}>
-                  {det.name} ×{det.quantity}
+                  {capitalize(det.name)} ×{det.quantity}
                 </Text>
               </View>
             ))}
@@ -252,7 +263,7 @@ export default function CameraScreen() {
                   )}
                   <View style={styles.modalRow}>
                     <Text style={styles.modalLabel}>Name</Text>
-                    <Text style={styles.modalValue}>{det.name}</Text>
+                    <Text style={styles.modalValue}>{capitalize(det.name)}</Text>
                   </View>
                   <View style={styles.modalRow}>
                     <Text style={styles.modalLabel}>Quantity</Text>

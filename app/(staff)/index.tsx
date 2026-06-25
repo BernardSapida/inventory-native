@@ -4,11 +4,12 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Spinner } from 'heroui-native';
-import { watchInventoryItems } from '@/lib/firebase/inventory';
+import { watchInventory } from '@/lib/firebase/products';
 import { watchRecipes } from '@/lib/firebase/recipes';
-import { FirestoreInventoryItem } from '@/lib/types/inventory';
+import { type ProductWithBatches } from '@/lib/types/product';
 import { RecipeModel } from '@/lib/types/recipe';
 import { C, useColors, ColorPalette } from '@/lib/constants';
+import ScreenHeader from '@/components/ScreenHeader';
 
 type Styles = ReturnType<typeof makeStyles>;
 
@@ -16,26 +17,26 @@ export default function StaffHome() {
   const router = useRouter();
   const palette = useColors();
   const styles = useMemo(() => makeStyles(palette), [palette]);
-  const [items, setItems] = useState<FirestoreInventoryItem[]>([]);
+  const [rows, setRows] = useState<ProductWithBatches[]>([]);
   const [recipes, setRecipes] = useState<RecipeModel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let loaded = 0;
     const check = () => { if (++loaded >= 2) setIsLoading(false); };
-    const unsub1 = watchInventoryItems((d) => { setItems(d); check(); });
+    const unsub1 = watchInventory((d) => { setRows(d); check(); });
     const unsub2 = watchRecipes((d) => { setRecipes(d); check(); });
     return () => { unsub1(); unsub2(); };
   }, []);
 
-  const lowItems = items.filter((i) => i.status === 'low');
-  const outItems = items.filter((i) => i.status === 'out');
+  const lowItems = rows.filter((r) => r.status === 'low');
+  const outItems = rows.filter((r) => r.status === 'out');
 
   const priorityIds = new Set<string>();
-  const priorityItems: FirestoreInventoryItem[] = [];
+  const priorityItems: ProductWithBatches[] = [];
   for (const item of [...outItems, ...lowItems]) {
-    if (!priorityIds.has(item.id)) {
-      priorityIds.add(item.id);
+    if (!priorityIds.has(item.product.id)) {
+      priorityIds.add(item.product.id);
       priorityItems.push(item);
     }
     if (priorityItems.length >= 6) break;
@@ -44,13 +45,13 @@ export default function StaffHome() {
   const latestRecipe = recipes.length > 0 ? recipes[0] : null;
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={false} tintColor={C.brand} />}
-    >
-      <Text style={styles.appBarTitle}>Staff Home</Text>
+    <View style={styles.root}>
+      <ScreenHeader title="Staff Home" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={false} tintColor={C.brand} />}
+      >
 
       {/* ── Dashboard Header Card ── */}
       <LinearGradient
@@ -89,7 +90,7 @@ export default function StaffHome() {
               icon="package"
               iconColor={C.info}
               iconBg={C.infoSoft}
-              value={items.length}
+              value={rows.length}
               title="Tracked Items"
               subtitle="Last updated from live stock records"
               styles={styles}
@@ -100,7 +101,7 @@ export default function StaffHome() {
               iconBg={C.warningSoft}
               value={lowItems.length}
               title="Low Stock"
-              subtitle={lowItems.length === 0 ? 'No urgent low-stock items' : lowItems.slice(0, 2).map((e) => e.name).join(', ')}
+              subtitle={lowItems.length === 0 ? 'No urgent low-stock items' : lowItems.slice(0, 2).map((e) => e.product.name).join(', ')}
               btnLabel="View Stock"
               btnColor={C.warning}
               btnBg={C.warningSoft}
@@ -113,7 +114,7 @@ export default function StaffHome() {
               iconBg={C.dangerSoft}
               value={outItems.length}
               title="Out of Stock"
-              subtitle={outItems.length === 0 ? 'No items currently out' : outItems.slice(0, 2).map((e) => e.name).join(', ')}
+              subtitle={outItems.length === 0 ? 'No items currently out' : outItems.slice(0, 2).map((e) => e.product.name).join(', ')}
               btnLabel="View Stock"
               btnColor={C.danger}
               btnBg={C.dangerSoft}
@@ -148,7 +149,7 @@ export default function StaffHome() {
           ) : (
             priorityItems.map((item) => (
               <TouchableOpacity
-                key={item.id}
+                key={item.product.id}
                 style={styles.stockCard}
                 onPress={() => router.push('/(staff)/inventory')}
                 activeOpacity={0.8}
@@ -157,12 +158,12 @@ export default function StaffHome() {
                   <Feather name="package" size={20} color={C.brand} />
                 </View>
                 <View style={styles.stockInfo}>
-                  <Text style={styles.stockName}>{item.name}</Text>
-                  <Text style={styles.stockMeta}>{item.category} • {item.unit}</Text>
+                  <Text style={styles.stockName}>{item.product.name}</Text>
+                  <Text style={styles.stockMeta}>{item.product.category} • {item.product.displayUnit}</Text>
                 </View>
                 <View style={styles.stockTrailing}>
                   <Text style={styles.stockQty}>
-                    {Number.isInteger(item.quantity) ? item.quantity : item.quantity.toFixed(2)} {item.unit}
+                    {item.onHand} {item.product.displayUnit}
                   </Text>
                   <View style={{ height: 8 }} />
                   <View style={[styles.statusPill, { backgroundColor: item.status === 'out' ? C.dangerSoft : C.warningSoft }]}>
@@ -176,7 +177,8 @@ export default function StaffHome() {
           )}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -219,9 +221,7 @@ function StatCard({ icon, iconColor, iconBg, value, title, subtitle, btnLabel, b
 function makeStyles(C: ColorPalette) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: C.bg },
-    content: { padding: 20, paddingTop: 56, paddingBottom: 32 },
-
-    appBarTitle: { color: C.text, fontSize: 20, fontWeight: '700', marginBottom: 20 },
+    content: { padding: 20, paddingTop: 4, paddingBottom: 32 },
 
     headerCard: { borderRadius: 26, padding: 20, overflow: 'hidden', marginBottom: 20 },
     decCircle1: {

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import BrandIcon from '@/components/BrandIcon';
 
 import { Stack, useRouter, useSegments } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
 import { HeroUINativeProvider } from 'heroui-native';
+import { Uniwind } from 'uniwind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DialogProvider } from '@/lib/dialog';
 import 'react-native-reanimated';
@@ -71,7 +73,14 @@ function AuthGate() {
 export default function RootLayout() {
   const { isLoading } = useAuthStore();
   const hydrate = useThemeStore((s) => s.hydrate);
+  const isDark = useThemeStore((s) => s.isDark);
   const [showSplash, setShowSplash] = useState(true);
+
+  // Keep heroui-native (uniwind) in sync with the app's manual theme toggle,
+  // so overlays like Dialog match in-app dark mode instead of the OS scheme.
+  useEffect(() => {
+    Uniwind.setTheme(isDark ? 'dark' : 'light');
+  }, [isDark]);
 
   const timerDone = useRef(false);
   const authDone = useRef(false);
@@ -108,12 +117,8 @@ export default function RootLayout() {
           <AuthGate />
           {showSplash && (
             <View style={styles.splash}>
-              <Image
-                source={require('../assets/images/smartstock.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-
+              <BrandIcon size={104} />
+              <Text style={styles.splashText}>SmartStock</Text>
             </View>
           )}
         </DialogProvider>
@@ -128,11 +133,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#151718',
     justifyContent: 'center',
     alignItems: 'center',
-
+    gap: 16,
     zIndex: 999,
   },
-  logo: {
-    width: 200,
-    height: 200,
+  splashText: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });

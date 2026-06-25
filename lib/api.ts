@@ -66,8 +66,10 @@ export const scanImage = (base64: string) =>
 
 export const getInventory = () => api.get<InventoryItem[]>("/inventory");
 
-export const saveInventory = (items: Omit<InventoryItem, "id">[]) =>
-  api.post("/inventory", { items });
+export const saveInventory = (
+  items: Omit<InventoryItem, "id">[],
+  addedBy?: string,
+) => api.post("/inventory", { items, addedBy });
 
 export const deleteInventoryItem = (id: number) =>
   api.delete(`/inventory/${id}`);
