@@ -143,11 +143,6 @@ export default function StaffProfile() {
     showToast("Password changed successfully");
   }
 
-  const permissions = user?.permissions ?? {};
-  const allowedPerms = Object.entries(permissions)
-    .filter(([, v]) => v)
-    .map(([k]) => permLabel(k));
-
   return (
     <View style={styles.root}>
       <ScreenHeader title="Profile" />
@@ -222,21 +217,6 @@ export default function StaffProfile() {
           palette={palette}
         />
       </View>
-
-      {/* ── Permissions ── */}
-      {allowedPerms.length > 0 && (
-        <>
-          <Text style={styles.sectionLabel}>MY PERMISSIONS</Text>
-          <View style={styles.permsCard}>
-            {allowedPerms.map((p) => (
-              <View key={p} style={styles.permRow}>
-                <Feather name="check" size={14} color={palette.success} />
-                <Text style={styles.permText}>{p}</Text>
-              </View>
-            ))}
-          </View>
-        </>
-      )}
 
       {/* ── Preferences ── */}
       <Text style={styles.sectionLabel}>PREFERENCES</Text>
@@ -471,24 +451,6 @@ function InfoRow({
   );
 }
 
-function permLabel(key: string) {
-  const map: Record<string, string> = {
-    inventoryView: "View Inventory",
-    inventoryAdjust: "Adjust Inventory",
-    recipePrepare: "Prepare Recipes",
-    inspectionSubmit: "Submit Inspections",
-    notificationsView: "View Notifications",
-    forecastView: "View Forecasts",
-    staffManage: "Manage Staff",
-    aiScanAccess: "AI Scan Access",
-    recipeCreate: "Create Recipes",
-    recipeEdit: "Edit Recipes",
-    recipeDelete: "Delete Recipes",
-    recipeView: "View Recipes",
-  };
-  return map[key] ?? key;
-}
-
 function makeStyles(C: ColorPalette) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: C.bg },
@@ -571,17 +533,6 @@ function makeStyles(C: ColorPalette) {
     infoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
     infoLabel: { color: C.textSec, fontSize: 13, flex: 1 },
     infoValue: { color: C.text, fontSize: 13, fontWeight: "600" },
-    permsCard: {
-      backgroundColor: C.surface,
-      borderRadius: 14,
-      padding: 16,
-      marginBottom: 20,
-      borderWidth: 1,
-      borderColor: C.border,
-      gap: 10,
-    },
-    permRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    permText: { color: C.text, fontSize: 13 },
     prefCard: {
       backgroundColor: C.surface,
       borderRadius: 14,
