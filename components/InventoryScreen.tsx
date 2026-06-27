@@ -765,7 +765,7 @@ function ProductDetailSheet({
       </Text>
 
       <Text style={styles.fieldLabel}>BATCHES (FEFO ORDER)</Text>
-      <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+      <ScrollView showsVerticalScrollIndicator={false}>
         {row.batches.length === 0 ? (
           <Text style={styles.emptySmall}>No stock on hand.</Text>
         ) : (
@@ -777,7 +777,7 @@ function ProductDetailSheet({
               unit={row.product.displayUnit}
               expiry={
                 b.expirationDate
-                  ? format(b.expirationDate.toDate(), "M/d/yyyy")
+                  ? format(b.expirationDate.toDate(), "MMM d, yyyy")
                   : "No expiry"
               }
               location={b.location}

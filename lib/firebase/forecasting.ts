@@ -23,11 +23,12 @@ interface ForecastIngredient {
 export async function generateForecast(): Promise<ForecastResult[]> {
   const operationId = newOperationId();
   try {
-    const [prodSnap, batchSnap, recipeSnap, prepSnap] = await Promise.all([
+    const [prodSnap, batchSnap, recipeSnap, prepSnap, usedSnap] = await Promise.all([
       getDocs(collection(db, 'products')),
       getDocs(collection(db, 'inventory_batches')),
       getDocs(collection(db, 'recipes')),
       getDocs(collection(db, 'preparations')),
+      getDocs(collection(db, 'used_stock')),
     ]);
 
     // On-hand per product = sum of its batch quantities (already in base unit).
@@ -36,6 +37,12 @@ export async function generateForecast(): Promise<ForecastResult[]> {
       const data = d.data();
       const pid = (data.productId as string) ?? '';
       onHandByProduct.set(pid, (onHandByProduct.get(pid) ?? 0) + Number(data.quantity ?? 0));
+    });
+
+    // Remaining contents of opened units (ml/g) per product, keyed by productId.
+    const usedByProduct = new Map<string, number>();
+    usedSnap.forEach((d) => {
+      usedByProduct.set(d.id, Number(d.data().remainingBase ?? 0));
     });
 
     // Recipes by id, with normalised ingredient fields (matches recipes.ts).
@@ -82,12 +89,31 @@ export async function generateForecast(): Promise<ForecastResult[]> {
       const name = (data.name as string) ?? '';
       const avgBase = (consumed.get(name.trim().toLowerCase()) ?? 0) / WINDOW_DAYS;
       if (avgBase <= 0) return; // admin filters out ingredients with no usage
-      const onHand = onHandByProduct.get(d.id) ?? 0;
+
+      // For measurable pcs products (bottles/cans) the recipe consumes the
+      // CONTENTS (ml/g), so on-hand pieces must be converted to the usage unit
+      // before comparing - otherwise we'd divide pieces by ml. On-hand contents
+      // = unopened pieces x unitSize + whatever remains in opened units.
+      const baseUnit = (data.baseUnit as string) ?? 'piece';
+      const unitSize = data.unitSize as number | null;
+      const usageUnit = data.usageUnit as string | null;
+      const isMeasurable =
+        !!data.measurable && baseUnit === 'piece' && !!unitSize && !!usageUnit;
+
+      const pieces = onHandByProduct.get(d.id) ?? 0;
+      const displayUnit = isMeasurable
+        ? (usageUnit as string)
+        : ((data.displayUnit as string) ?? 'pcs');
+      const onHand = isMeasurable
+        ? pieces * toBaseUnit(unitSize as number, usageUnit as string) +
+          (usedByProduct.get(d.id) ?? 0)
+        : pieces;
+
       results.push({
         id: d.id,
         name,
         category: (data.category as string) ?? 'Uncategorized',
-        displayUnit: (data.displayUnit as string) ?? 'pcs',
+        displayUnit,
         onHand,
         avgPerDayBase: avgBase,
         daysLeft: avgBase > 0 ? Math.floor(onHand / avgBase) : null,
