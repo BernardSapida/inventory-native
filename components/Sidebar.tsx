@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   navIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },

@@ -15,6 +15,7 @@ import '../global.css';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase/config';
 import { getUserById } from '@/lib/firebase/users';
+import { watchSpoonDefaults } from '@/lib/firebase/settings';
 import { useAuthStore } from '@/store/auth';
 import { useThemeStore } from '@/store/theme';
 import { useColors } from '@/lib/constants';
@@ -49,6 +50,14 @@ function AuthGate() {
     });
     return unsubscribe;
   }, []);
+
+  // Once signed in, keep the global spoon-conversion table in sync so recipe
+  // math on the prepare screens resolves the same densities as the admin web.
+  useEffect(() => {
+    if (!user) return;
+    const unsub = watchSpoonDefaults();
+    return unsub;
+  }, [user]);
 
   useEffect(() => {
     if (isLoading) return;

@@ -220,7 +220,7 @@ async function syncAlerts(
       await createNotification(
         `${itemName} is out of stock`,
         `${itemName} has run out. Restock immediately.`,
-        'admin',
+        'all',
         'out_of_stock',
         itemId
       );
@@ -228,7 +228,7 @@ async function syncAlerts(
       await createNotification(
         `Low stock: ${itemName}`,
         `${itemName} is running low (${quantity} remaining).`,
-        'admin',
+        'all',
         'low_stock',
         itemId
       );
@@ -242,7 +242,7 @@ async function syncAlerts(
         await createNotification(
           `Expiring soon: ${itemName}`,
           `${itemName} expires in ${days} day(s).`,
-          'admin',
+          'all',
           'expiry',
           itemId
         );

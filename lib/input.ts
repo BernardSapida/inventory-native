@@ -1,5 +1,5 @@
 // Sanitizers for numeric TextInputs. `keyboardType="numeric"` is only a
-// keyboard hint — it does not stop letters arriving via paste, keyboard
+// keyboard hint - it does not stop letters arriving via paste, keyboard
 // switching, or Android layouts that still expose alpha keys. Run user input
 // through these in onChangeText so the value can only ever hold a number.
 

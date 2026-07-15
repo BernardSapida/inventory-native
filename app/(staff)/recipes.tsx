@@ -2,7 +2,6 @@ import { EmptyState } from "@/components/EmptyState";
 import ScreenHeader from "@/components/ScreenHeader";
 import { Toast } from "@/components/Toast";
 import { C, ColorPalette, useColors } from "@/lib/constants";
-import { sanitizeDecimal, sanitizeInteger } from "@/lib/input";
 import { useAppDialog } from "@/lib/dialog";
 import { watchInventory, watchUsedStock } from "@/lib/firebase/products";
 import {
@@ -11,11 +10,12 @@ import {
   updateRecipe,
   watchRecipes,
 } from "@/lib/firebase/recipes";
+import { sanitizeDecimal, sanitizeInteger } from "@/lib/input";
+import { computeMaxServings } from "@/lib/recipe-math";
 import {
   ProductWithBatches,
   UsedStock,
-  toBaseUnit,
-  unitInfo,
+  allowedUnitsForProduct,
 } from "@/lib/types/product";
 import {
   RECIPE_CATEGORIES,
@@ -42,6 +42,12 @@ import {
 
 const ALL_UNITS = ["pcs", "g", "kg", "ml", "L", "tbsp", "tsp", "cup"];
 
+/**
+ * Units offerable for an ingredient. Delegates to allowedUnitsForProduct, which
+ * offers tbsp/tsp for a mass-stocked product once it has a density - this screen
+ * used to hardcode `["g", "kg"]` for every gram product, so "1 tbsp sugar" was
+ * literally not selectable on mobile.
+ */
 function getAllowedUnits(
   productName: string,
   products: ProductWithBatches[],
@@ -52,59 +58,7 @@ function getAllowedUnits(
       r.product.name.trim().toLowerCase() === productName.trim().toLowerCase(),
   );
   if (!row) return ALL_UNITS;
-  const p = row.product;
-  if (p.measurable && p.usageUnit) {
-    const uBase = unitInfo(p.usageUnit).base;
-    if (uBase === "ml") return ["ml", "L", "tbsp", "tsp", "cup"];
-    if (uBase === "g") return ["g", "kg"];
-  }
-  if (p.baseUnit === "ml") return ["ml", "L", "tbsp", "tsp", "cup"];
-  if (p.baseUnit === "g") return ["g", "kg"];
-  return ["pcs"];
-}
-
-function computeMaxServings(
-  recipe: RecipeModel,
-  products: ProductWithBatches[],
-  usedStock: UsedStock[],
-): number {
-  if (recipe.ingredients.length === 0) return 0;
-  const byName = new Map(
-    products.map((r) => [r.product.name.trim().toLowerCase(), r]),
-  );
-  const usedById = new Map(usedStock.map((u) => [u.id, u]));
-  let max = Infinity;
-
-  for (const ing of recipe.ingredients) {
-    const row = byName.get(ing.name.trim().toLowerCase());
-    if (!row) return 0;
-    const product = row.product;
-    const perServing = toBaseUnit(ing.quantityPerServing, ing.unit);
-    if (perServing <= 0) continue;
-
-    const ingBase = unitInfo(ing.unit).base;
-    const isMeasurablePcs =
-      product.measurable &&
-      product.baseUnit === "piece" &&
-      !!product.unitSize &&
-      !!product.usageUnit;
-
-    let haveBase: number;
-    if (isMeasurablePcs) {
-      const effectiveBase = unitInfo(product.usageUnit!).base;
-      if (ingBase !== effectiveBase) return 0;
-      const unitSizeBase = toBaseUnit(product.unitSize!, product.usageUnit!);
-      const remaining = usedById.get(product.id)?.remainingBase ?? 0;
-      haveBase = row.onHand * unitSizeBase + remaining;
-    } else {
-      if (ingBase !== product.baseUnit) return 0;
-      haveBase = row.onHand;
-    }
-
-    max = Math.min(max, Math.floor(haveBase / perServing));
-  }
-
-  return max === Infinity ? 0 : max;
+  return allowedUnitsForProduct(row.product);
 }
 
 export default function StaffRecipes() {

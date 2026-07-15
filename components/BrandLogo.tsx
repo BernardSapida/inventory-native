@@ -8,7 +8,7 @@ interface Props {
 }
 
 /**
- * SmartStock brand mark — the logo image.
+ * SmartStock brand mark - the logo image.
  * Shared across the splash screen and auth screens.
  */
 export default function BrandLogo({ size = 24 }: Props) {

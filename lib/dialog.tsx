@@ -59,7 +59,9 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       {children}
       <Dialog isOpen={state.isOpen} onOpenChange={(v) => !v && dismiss()}>
         <Dialog.Portal>
-          <Dialog.Overlay isCloseOnPress={false} />
+          {/* Default `bg-backdrop` is only 20% black, so the app's dark background
+              shows through and reads as a green tint. Force a solid dark scrim. */}
+          <Dialog.Overlay isCloseOnPress={false} className="bg-black/70" />
           <Dialog.Content isSwipeable={false}>
             <View className="mb-4 gap-1.5">
               <Dialog.Title>{state.title}</Dialog.Title>

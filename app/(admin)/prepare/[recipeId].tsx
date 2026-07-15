@@ -7,12 +7,8 @@ import {
   watchUsedStock,
 } from "@/lib/firebase/products";
 import { watchRecipes } from "@/lib/firebase/recipes";
-import {
-  ProductWithBatches,
-  UsedStock,
-  toBaseUnit,
-  unitInfo,
-} from "@/lib/types/product";
+import { buildIngredientStatuses, computeMaxServings } from "@/lib/recipe-math";
+import { ProductWithBatches, UsedStock, unitInfo } from "@/lib/types/product";
 import { RecipeModel } from "@/lib/types/recipe";
 import { useAuthStore } from "@/store/auth";
 import { Feather } from "@expo/vector-icons";
@@ -27,107 +23,6 @@ import {
   View,
 } from "react-native";
 
-interface IngredientStatus {
-  name: string;
-  unit: string;
-  perServing: number;
-  needed: number;
-  haveBase: number;
-  short: boolean;
-}
-
-function buildIngredientStatuses(
-  recipe: RecipeModel,
-  servings: number,
-  products: ProductWithBatches[],
-  usedStock: UsedStock[],
-): IngredientStatus[] {
-  const byName = new Map(
-    products.map((r) => [r.product.name.trim().toLowerCase(), r]),
-  );
-  const usedById = new Map(usedStock.map((u) => [u.id, u]));
-
-  return recipe.ingredients.map((ing) => {
-    const row = byName.get(ing.name.trim().toLowerCase());
-    const needed = toBaseUnit(ing.quantityPerServing * servings, ing.unit);
-
-    if (!row)
-      return {
-        name: ing.name,
-        unit: ing.unit,
-        perServing: ing.quantityPerServing,
-        needed,
-        haveBase: 0,
-        short: true,
-      };
-
-    const product = row.product;
-    const isMeasurablePcs =
-      product.measurable &&
-      product.baseUnit === "piece" &&
-      !!product.unitSize &&
-      !!product.usageUnit;
-
-    let haveBase: number;
-    if (isMeasurablePcs) {
-      const unitSizeBase = toBaseUnit(product.unitSize!, product.usageUnit!);
-      const remaining = usedById.get(product.id)?.remainingBase ?? 0;
-      haveBase = row.onHand * unitSizeBase + remaining;
-    } else {
-      haveBase = row.onHand;
-    }
-
-    return {
-      name: ing.name,
-      unit: ing.unit,
-      perServing: ing.quantityPerServing,
-      needed,
-      haveBase,
-      short: haveBase < needed,
-    };
-  });
-}
-
-function computeMaxServings(
-  recipe: RecipeModel,
-  products: ProductWithBatches[],
-  usedStock: UsedStock[],
-): number {
-  if (recipe.ingredients.length === 0) return 0;
-  const byName = new Map(
-    products.map((r) => [r.product.name.trim().toLowerCase(), r]),
-  );
-  const usedById = new Map(usedStock.map((u) => [u.id, u]));
-  let max = Infinity;
-
-  for (const ing of recipe.ingredients) {
-    const row = byName.get(ing.name.trim().toLowerCase());
-    if (!row) return 0;
-    const product = row.product;
-    const perServing = toBaseUnit(ing.quantityPerServing, ing.unit);
-    if (perServing <= 0) continue;
-
-    const isMeasurablePcs =
-      product.measurable &&
-      product.baseUnit === "piece" &&
-      !!product.unitSize &&
-      !!product.usageUnit;
-
-    let haveBase: number;
-    if (isMeasurablePcs) {
-      const unitSizeBase = toBaseUnit(product.unitSize!, product.usageUnit!);
-      const remaining = usedById.get(product.id)?.remainingBase ?? 0;
-      haveBase = row.onHand * unitSizeBase + remaining;
-    } else {
-      haveBase = row.onHand;
-    }
-
-    max = Math.min(max, Math.floor(haveBase / perServing));
-  }
-
-  return max === Infinity ? 0 : max;
-}
-
 function fmtBase(amount: number, unit: string): string {
   const base = unitInfo(unit).base;
   if (base === "ml") {
@@ -141,6 +36,13 @@ function fmtBase(amount: number, unit: string): string {
   return `${Math.round(amount)} pcs`;
 }
 
+// "Need" is shown in the recipe's OWN declared unit (tbsp, tsp, pcs...) so it
+// matches what the admin typed on the web, instead of the product's base unit.
+// Trim float noise (0.30000001 -> 0.3) without forcing trailing zeros.
+function fmtRecipeQty(qty: number, unit: string): string {
+  return `${Math.round(qty * 1000) / 1000} ${unit}`;
+}
+
 export default function AdminPrepareRecipeScreen() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
   const router = useRouter();
@@ -148,7 +50,7 @@ export default function AdminPrepareRecipeScreen() {
 
   // `prepare` is a hidden tab wrapping the [recipeId] route, so its internal
   // stack accumulates each recipe visited. router.back() would pop to the
-  // previous recipe in that stack instead of the list — always exit to recipes.
+  // previous recipe in that stack instead of the list - always exit to recipes.
   const goBackToRecipes = useCallback(() => {
     router.replace("/(admin)/recipes");
   }, [router]);
@@ -273,10 +175,7 @@ export default function AdminPrepareRecipeScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={goBackToRecipes}
-          style={styles.backButton}
-        >
+        <TouchableOpacity onPress={goBackToRecipes} style={styles.backButton}>
           <Feather name="arrow-left" size={22} color={palette.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -334,8 +233,8 @@ export default function AdminPrepareRecipeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.ingName}>{ing.name}</Text>
               <Text style={styles.ingDetail}>
-                Need: {fmtBase(ing.needed, ing.unit)} · Have:{" "}
-                {fmtBase(ing.haveBase, ing.unit)}
+                Need: {fmtRecipeQty(ing.perServing * servings, ing.unit)} ·
+                Have: {fmtBase(ing.haveBase, ing.baseUnit)}
               </Text>
             </View>
             <View

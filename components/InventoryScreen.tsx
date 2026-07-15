@@ -658,6 +658,7 @@ export default function InventoryScreen() {
       {(addOpen || !!editTarget) && (
         <ProductFormModal
           initial={editTarget ?? undefined}
+          existingNames={rows.map((r) => r.product.name)}
           addedBy={addedBy}
           onClose={() => {
             setAddOpen(false);
@@ -870,12 +871,14 @@ function BatchRow({
 
 function ProductFormModal({
   initial,
+  existingNames,
   addedBy,
   onClose,
   onSaved,
   onError,
 }: {
   initial?: ProductWithBatches;
+  existingNames: string[];
   addedBy: string;
   onClose: () => void;
   onSaved: (msg: string) => void;
@@ -925,6 +928,14 @@ function ProductFormModal({
   async function handleSave() {
     if (!name.trim()) {
       onError("Product name is required.");
+      return;
+    }
+    // Block duplicate names (case-insensitive). When editing, the product's own
+    // name is allowed.
+    const nameKey = name.trim().toLowerCase();
+    const isSelf = initial?.product.name.trim().toLowerCase() === nameKey;
+    if (!isSelf && existingNames.some((n) => n.trim().toLowerCase() === nameKey)) {
+      onError(`A product named "${name.trim()}" already exists.`);
       return;
     }
     if (isPcs && measurable && !unitSize) {

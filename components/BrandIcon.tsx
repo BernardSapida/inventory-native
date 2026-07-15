@@ -10,7 +10,7 @@ interface Props {
 }
 
 /**
- * SmartStock app icon — the logo image.
+ * SmartStock app icon - the logo image.
  * Used on the splash screen and as the sidebar brand mark.
  */
 export default function BrandIcon({ size = 56, radius }: Props) {

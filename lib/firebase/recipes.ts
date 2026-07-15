@@ -6,11 +6,13 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  getDoc,
   serverTimestamp,
   Timestamp,
   orderBy,
 } from 'firebase/firestore';
 import { db } from './config';
+import { audit } from './audit';
 import { RecipeModel } from '@/lib/types/recipe';
 import { logger } from '@/lib/logger';
 import { newOperationId, errorMeta } from './errors';
@@ -61,6 +63,7 @@ export async function addRecipe(
       createdBy,
       createdAt: serverTimestamp(),
     });
+    audit('CREATE', 'Recipes', `Created recipe "${recipe.name}"`);
     logger.info({ message: 'Recipe added', operationId, userId: createdBy, operation: 'recipes.addRecipe', recipeName: recipe.name });
   } catch (err: unknown) {
     logger.error({ message: 'Add recipe failed', operationId, userId: createdBy, operation: 'recipes.addRecipe', recipeName: recipe.name, ...errorMeta(err) });
@@ -75,6 +78,7 @@ export async function updateRecipe(
   const operationId = newOperationId();
   try {
     await updateDoc(doc(db, 'recipes', id), updates);
+    audit('UPDATE', 'Recipes', `Updated recipe "${updates.name ?? id}"`);
     logger.info({ message: 'Recipe updated', operationId, operation: 'recipes.updateRecipe', recipeId: id });
   } catch (err: unknown) {
     logger.error({ message: 'Update recipe failed', operationId, operation: 'recipes.updateRecipe', recipeId: id, ...errorMeta(err) });
@@ -85,7 +89,15 @@ export async function updateRecipe(
 export async function deleteRecipe(id: string): Promise<void> {
   const operationId = newOperationId();
   try {
+    // Read the name before deleting - afterwards there is nothing left to read.
+    let name = id;
+    try {
+      name = ((await getDoc(doc(db, 'recipes', id))).data()?.name as string) || id;
+    } catch {
+      // Fall back to the id rather than lose the audit entry.
+    }
     await deleteDoc(doc(db, 'recipes', id));
+    audit('DELETE', 'Recipes', `Deleted recipe "${name}"`);
     logger.info({ message: 'Recipe deleted', operationId, operation: 'recipes.deleteRecipe', recipeId: id });
   } catch (err: unknown) {
     logger.error({ message: 'Delete recipe failed', operationId, operation: 'recipes.deleteRecipe', recipeId: id, ...errorMeta(err) });

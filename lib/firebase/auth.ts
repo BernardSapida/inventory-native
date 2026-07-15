@@ -11,6 +11,7 @@ import { auth, db } from './config';
 import { DEFAULT_PERMISSIONS } from '@/lib/types/user';
 import { logger } from '@/lib/logger';
 import { newOperationId, errorMeta } from './errors';
+import { logAction, logCurrentUserAction } from './audit';
 
 export async function signUp(
   fullName: string,
@@ -72,6 +73,17 @@ export async function signIn(email: string, password: string): Promise<string | 
       return 'This account is inactive. Please contact the admin.';
     }
 
+    // Log directly rather than via audit(): the auth store is not populated
+    // until after this returns, so audit() would record the actor as "unknown".
+    void logAction({
+      uid,
+      user: (data.fullName as string) || (data.email as string) || email.trim(),
+      role,
+      action: 'LOGIN',
+      module: 'Auth',
+      description: 'Signed in on mobile',
+    });
+
     logger.info({ message: 'User signed in', operationId, userId: uid, operation: 'auth.signIn', role });
     return null;
   } catch (err: unknown) {
@@ -84,6 +96,9 @@ export async function signOut(): Promise<void> {
   const operationId = newOperationId();
   const uid = auth.currentUser?.uid;
   try {
+    // Must be awaited BEFORE fbSignOut: once signed out, Firestore rules reject
+    // the write and the logout would never be recorded.
+    await logCurrentUserAction('LOGOUT', 'Auth', 'Signed out on mobile');
     await fbSignOut(auth);
     logger.info({ message: 'User signed out', operationId, userId: uid, operation: 'auth.signOut' });
   } catch (err: unknown) {

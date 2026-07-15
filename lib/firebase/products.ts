@@ -7,6 +7,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -18,13 +19,16 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./config";
+import { audit, type AuditAction } from "./audit";
 import {
   deriveStatus,
   type InventoryBatch,
   type Product,
   type ProductWithBatches,
   type UsedStock,
+  suggestedDensity,
   toBaseUnit,
+  toProductBase,
   unitInfo,
 } from "@/lib/types/product";
 import type { RecipeIngredient, RecipeModel } from "@/lib/types/recipe";
@@ -43,6 +47,7 @@ function toProduct(id: string, d: Record<string, unknown>): Product {
     measurable: (d.measurable as boolean) ?? false,
     unitSize: (d.unitSize as number) ?? null,
     usageUnit: (d.usageUnit as string) ?? null,
+    density: (d.density as number) ?? null,
   };
 }
 
@@ -119,6 +124,28 @@ export function watchInventory(
 }
 
 /** Add a new batch (stock receiving). Expiry is MANUAL (pass a Date or null). */
+/**
+ * Audit an inventory action, resolving the product's name first so the log reads
+ * `Added 5 kg to "Sugar"` instead of a raw document id. Fire-and-forget: the
+ * lookup never blocks (or fails) the write it describes.
+ */
+function auditWithProduct(
+  productId: string,
+  action: AuditAction,
+  describe: (name: string) => string,
+): void {
+  void (async () => {
+    let name = productId;
+    try {
+      const snap = await getDoc(doc(db, "products", productId));
+      name = (snap.data()?.name as string) || productId;
+    } catch {
+      // Fall back to the id; a missing name must not lose the audit entry.
+    }
+    audit(action, "Inventory", describe(name));
+  })();
+}
+
 export async function addBatch(args: {
   productId: string;
   displayUnit: string;
@@ -139,6 +166,11 @@ export async function addBatch(args: {
     source: args.source ?? "manual",
     addedBy: args.addedBy,
   });
+  auditWithProduct(
+    args.productId,
+    "CREATE",
+    (name) => `Added ${args.quantityDisplay} ${args.displayUnit} to "${name}"`,
+  );
   return ref.id;
 }
 
@@ -150,6 +182,7 @@ export async function updateBatchQuantity(
   await updateDoc(doc(db, "inventory_batches", batchId), {
     quantity: toBaseUnit(newQtyDisplay, displayUnit),
   });
+  audit("UPDATE", "Inventory", `Set batch quantity to ${newQtyDisplay} ${displayUnit}`);
 }
 
 /** Create a product (e.g. when a scanned item is not yet in the catalog). */
@@ -173,6 +206,7 @@ export async function ensureProduct(args: {
     measurable: false,
     unitSize: null,
     usageUnit: null,
+    density: suggestedDensity(args.name),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -190,6 +224,7 @@ export async function saveProduct(
     measurable: boolean;
     unitSize: number | null;
     usageUnit: string | null;
+    density?: number | null;
   },
   existingId?: string,
 ): Promise<string> {
@@ -210,16 +245,22 @@ export async function saveProduct(
     measurable: isPcs && args.measurable,
     unitSize: isPcs && args.measurable ? args.unitSize : null,
     usageUnit: isPcs && args.measurable ? args.usageUnit : null,
+    // Only mass-stocked items need a density (it is what makes tbsp/tsp
+    // convertible). Fall back to the name-based default so seasonings work
+    // without the user having to know what a density is.
+    density: base === "g" ? (args.density ?? suggestedDensity(args.name)) : null,
     updatedAt: serverTimestamp(),
   };
   if (existingId) {
     await updateDoc(doc(db, "products", existingId), data);
+    audit("UPDATE", "Inventory", `Updated product "${data.name}"`);
     return existingId;
   }
   const ref = await addDoc(collection(db, "products"), {
     ...data,
     createdAt: serverTimestamp(),
   });
+  audit("CREATE", "Inventory", `Added product "${data.name}"`);
   return ref.id;
 }
 
@@ -286,8 +327,13 @@ export async function recordPreparation(args: {
     if (!row) continue;
 
     const product = row.product;
-    const required = toBaseUnit(ing.quantityPerServing * servings, ing.unit);
-    if (required <= 0) continue;
+    // toProductBase applies the product's density when the recipe measures by
+    // volume (tbsp/tsp) but the product is stocked by mass: 1 tbsp sugar = 12.5 g.
+    // It returns null when the units genuinely cannot be reconciled -- skip those
+    // rather than deducting a wrong amount, which is what the old toBaseUnit call
+    // did (it silently treated "tbsp" as 1 piece).
+    const required = toProductBase(ing.quantityPerServing * servings, ing.unit, product);
+    if (required == null || required <= 0) continue;
 
     const isMeasurablePcs =
       product.measurable &&
@@ -373,6 +419,12 @@ export async function recordPreparation(args: {
   });
 
   await wb.commit();
+
+  audit(
+    "UPDATE",
+    "Recipes",
+    `Prepared "${recipe.name}" x${servings} serving${servings === 1 ? "" : "s"} (deducted ${ops.filter((o) => o.kind !== "set_used_stock").length} batch update${ops.length === 1 ? "" : "s"})`,
+  );
 }
 
 export interface ConsumedPart {
@@ -419,9 +471,18 @@ export async function consumeProduct(
 
 export async function deleteBatch(batchId: string): Promise<void> {
   await deleteDoc(doc(db, "inventory_batches", batchId));
+  audit("DELETE", "Inventory", `Deleted batch ${batchId}`);
 }
 
 export async function deleteProduct(productId: string): Promise<void> {
+  // Resolve the name before deleting - afterwards there is nothing to read.
+  let name = productId;
+  try {
+    name = ((await getDoc(doc(db, "products", productId))).data()?.name as string) || productId;
+  } catch {
+    // Fall back to the id.
+  }
+
   const snap = await getDocs(
     query(collection(db, "inventory_batches"), where("productId", "==", productId)),
   );
@@ -429,4 +490,10 @@ export async function deleteProduct(productId: string): Promise<void> {
   snap.docs.forEach((d) => wb.delete(d.ref));
   wb.delete(doc(db, "products", productId));
   await wb.commit();
+
+  audit(
+    "DELETE",
+    "Inventory",
+    `Deleted product "${name}" and its ${snap.size} batch${snap.size === 1 ? "" : "es"}`,
+  );
 }
