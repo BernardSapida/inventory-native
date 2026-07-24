@@ -195,7 +195,8 @@ export default function AdminRecipes() {
       }
       setShowForm(false);
     } catch (e: unknown) {
-      showAlert("Error", (e as Error).message);
+      // Keep the form open and show the failure inline above the save button.
+      setFormErrors((prev) => ({ ...prev, submit: (e as Error).message }));
     } finally {
       setSaving(false);
     }

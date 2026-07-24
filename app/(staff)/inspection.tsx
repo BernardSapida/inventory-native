@@ -6,7 +6,7 @@ import {
   submitInspection,
   watchInspections,
 } from "@/lib/firebase/inspections";
-import { watchInventory } from "@/lib/firebase/products";
+import { updateBatchDetails, watchInventory } from "@/lib/firebase/products";
 import {
   InspectionCondition,
   InspectionModel,
@@ -21,9 +21,10 @@ import {
 } from "@/lib/types/product";
 import { useAuthStore } from "@/store/auth";
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import { Spinner } from "heroui-native";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -56,6 +57,16 @@ const CONDITIONS: {
 
 type Tab = "assigned" | "history";
 
+/** Parse an MM/DD/YYYY string. Mirrors InventoryScreen's add-batch parser. */
+function parseDate(s: string): Date | undefined {
+  const parts = s.split("/");
+  if (parts.length !== 3) return undefined;
+  const [m, d, y] = parts.map(Number);
+  if (!m || !d || !y || y < 2000) return undefined;
+  const dt = new Date(y, m - 1, d);
+  return isNaN(dt.getTime()) ? undefined : dt;
+}
+
 export default function StaffInspection() {
   const { user } = useAuthStore();
   const palette = useColors();
@@ -76,11 +87,21 @@ export default function StaffInspection() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Editable batch details (correcting the record during inspection). Kept in the
+  // display unit / MM-DD-YYYY, pre-filled from the selected batch.
+  const [batchQty, setBatchQty] = useState("");
+  const [batchExpiry, setBatchExpiry] = useState("");
+  const [showBatchDatePicker, setShowBatchDatePicker] = useState(false);
+  const prefilledBatchRef = useRef<string | null>(null);
+  // Validation/errors are shown INLINE inside the sheet. A popup dialog fired from
+  // inside a native Modal renders behind it, so the user never sees it.
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Disposal sheet: which inspection, and how much of its batch to write off.
   const [disposing, setDisposing] = useState<InspectionModel | null>(null);
   const [disposeQty, setDisposeQty] = useState("");
   const [disposeBusy, setDisposeBusy] = useState(false);
+  const [disposeError, setDisposeError] = useState<string | null>(null);
 
   useEffect(() => {
     let loaded = 0;
@@ -106,6 +127,25 @@ export default function StaffInspection() {
     [products, productId],
   );
 
+  // Pre-fill the editable batch fields whenever a different batch is selected,
+  // without clobbering edits the user is making to the same batch.
+  useEffect(() => {
+    if (!batchId) {
+      setBatchQty("");
+      setBatchExpiry("");
+      prefilledBatchRef.current = null;
+      return;
+    }
+    if (prefilledBatchRef.current === batchId || !selectedProduct) return;
+    const b = selectedProduct.batches.find((x) => x.id === batchId);
+    if (!b) return;
+    setBatchQty(String(fromBaseUnit(b.quantity, selectedProduct.product.displayUnit)));
+    setBatchExpiry(
+      b.expirationDate ? format(b.expirationDate.toDate(), "MM/dd/yyyy") : "",
+    );
+    prefilledBatchRef.current = batchId;
+  }, [batchId, selectedProduct]);
+
   // Only inspections assigned to THIS staff member land in their to-do list.
   const assigned = useMemo(
     () =>
@@ -125,6 +165,10 @@ export default function StaffInspection() {
     setBatchId(null);
     setCondition("good");
     setNotes("");
+    setFormError(null);
+    setBatchQty("");
+    setBatchExpiry("");
+    prefilledBatchRef.current = null;
   }
 
   function openNew() {
@@ -138,14 +182,55 @@ export default function StaffInspection() {
     setBatchId(item.batchId);
     setCondition("good");
     setNotes(item.notes ?? "");
+    setFormError(null);
     setShowForm(true);
   }
 
   async function handleSubmit() {
     if (!productId || !selectedProduct) {
-      showAlert("Required", "Please choose the item you inspected.");
+      setFormError("Please choose the item you inspected.");
       return;
     }
+
+    // For non-disposable conditions, staff may correct the batch's quantity/expiry.
+    // Validate up front so bad input keeps the sheet open. (Disposable conditions
+    // adjust quantity through the disposal flow instead.)
+    const canEditBatch = !!batchId && !isDisposable(condition);
+    const selectedBatch = canEditBatch
+      ? selectedProduct.batches.find((b) => b.id === batchId)
+      : undefined;
+    let batchEdit:
+      | { quantityDisplay: number; expirationDate: Date | null }
+      | null = null;
+
+    if (canEditBatch && selectedBatch) {
+      const unit = selectedProduct.product.displayUnit;
+      const qtyNum = Number(batchQty);
+      if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+        setFormError("Enter a valid batch quantity.");
+        return;
+      }
+      let expDate: Date | null = null;
+      if (batchExpiry.trim()) {
+        const parsed = parseDate(batchExpiry.trim());
+        if (!parsed) {
+          setFormError("Enter a valid expiry date (MM/DD/YYYY).");
+          return;
+        }
+        expDate = parsed;
+      }
+      // Only write if something actually changed.
+      const origQty = fromBaseUnit(selectedBatch.quantity, unit);
+      const origExp = selectedBatch.expirationDate
+        ? format(selectedBatch.expirationDate.toDate(), "MM/dd/yyyy")
+        : "";
+      const newExp = expDate ? format(expDate, "MM/dd/yyyy") : "";
+      if (qtyNum !== origQty || newExp !== origExp) {
+        batchEdit = { quantityDisplay: qtyNum, expirationDate: expDate };
+      }
+    }
+
+    setFormError(null);
     setSaving(true);
     try {
       const id = await submitInspection({
@@ -158,6 +243,16 @@ export default function StaffInspection() {
         staffId: user?.uid ?? "",
         staffName: user?.fullName ?? "Staff",
       });
+
+      if (batchEdit && batchId) {
+        await updateBatchDetails({
+          batchId,
+          quantityDisplay: batchEdit.quantityDisplay,
+          displayUnit: selectedProduct.product.displayUnit,
+          expirationDate: batchEdit.expirationDate,
+          itemName: selectedProduct.product.name,
+        });
+      }
 
       setShowForm(false);
       const name = selectedProduct.product.name;
@@ -188,7 +283,8 @@ export default function StaffInspection() {
         showAlert("Submitted", "Inspection report submitted successfully.");
       }
     } catch (e: unknown) {
-      showAlert("Error", (e as Error).message);
+      // Keep the sheet open and show the error inline, where it stays visible.
+      setFormError((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -199,6 +295,7 @@ export default function StaffInspection() {
     const row = products.find((p) => p.product.id === item.productId);
     const batch = row?.batches.find((b) => b.id === item.batchId);
     setDisposing(item);
+    setDisposeError(null);
     // Default to the full batch - the common case is "all of it spoiled". Staff
     // can lower it when only part went bad.
     setDisposeQty(
@@ -213,26 +310,25 @@ export default function StaffInspection() {
     const row = products.find((p) => p.product.id === disposing.productId);
     const batch = row?.batches.find((b) => b.id === disposing.batchId);
     if (!row || !batch) {
-      showAlert("Could not dispose", "That batch no longer exists.");
-      setDisposing(null);
+      setDisposeError("That batch no longer exists.");
       return;
     }
 
     const entered = Number(disposeQty);
     if (!Number.isFinite(entered) || entered <= 0) {
-      showAlert("Invalid amount", "Enter how much is being disposed.");
+      setDisposeError("Enter how much is being disposed.");
       return;
     }
 
     // The user types in the display unit (kg); stock is stored in the base unit (g).
     const qtyBase = toBaseUnit(entered, row.product.displayUnit);
     if (qtyBase > batch.quantity) {
-      showAlert(
-        "Too much",
+      setDisposeError(
         `This batch only has ${formatQuantity(batch.quantity, row.product.displayUnit)} left.`,
       );
       return;
     }
+    setDisposeError(null);
 
     const isFull = qtyBase >= batch.quantity;
     const remaining = batch.quantity - qtyBase;
@@ -257,7 +353,7 @@ export default function StaffInspection() {
           : `${formatQuantity(qtyBase, row.product.displayUnit)} of ${disposing.itemName} was written off. ${formatQuantity(remaining, row.product.displayUnit)} remains.`,
       );
     } catch (e: unknown) {
-      showAlert("Could not dispose", (e as Error).message);
+      setDisposeError((e as Error).message);
     } finally {
       setDisposeBusy(false);
     }
@@ -525,6 +621,56 @@ export default function StaffInspection() {
                 ))}
               </View>
 
+              {/* Correct the batch's recorded quantity / expiry if the physical
+                  check turns up something different. Hidden for damaged/expired,
+                  where the disposal flow adjusts quantity instead. */}
+              {batchId && selectedProduct && !isDisposable(condition) && (
+                <>
+                  <Text style={styles.fieldLabel}>
+                    Batch quantity ({selectedProduct.product.displayUnit})
+                  </Text>
+                  <TextInput
+                    style={[styles.formInput, { marginBottom: 16 }]}
+                    value={batchQty}
+                    onChangeText={(t) => {
+                      setBatchQty(t);
+                      if (formError) setFormError(null);
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={palette.textSec}
+                  />
+
+                  <Text style={styles.fieldLabel}>Batch expiry (MM/DD/YYYY)</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.formInput,
+                      {
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: 6,
+                      },
+                    ]}
+                    onPress={() => setShowBatchDatePicker(true)}
+                  >
+                    <Text
+                      style={{
+                        color: batchExpiry ? palette.text : palette.textSec,
+                        fontSize: 14,
+                      }}
+                    >
+                      {batchExpiry || "No expiry set"}
+                    </Text>
+                    <Feather name="calendar" size={16} color={palette.textSec} />
+                  </TouchableOpacity>
+                  <Text style={styles.batchEditHint}>
+                    Update these if the actual quantity or expiry differs from what
+                    is recorded.
+                  </Text>
+                </>
+              )}
+
               {/* Tell them what's about to happen before they submit. */}
               {isDisposable(condition) && (
                 <View style={styles.warnBox}>
@@ -554,6 +700,8 @@ export default function StaffInspection() {
                 placeholderTextColor={palette.textSec}
                 multiline
               />
+
+              {formError && <Text style={styles.inlineErr}>{formError}</Text>}
 
               <TouchableOpacity
                 style={[styles.saveBtn, saving && { opacity: 0.6 }]}
@@ -621,7 +769,10 @@ export default function StaffInspection() {
                   <TextInput
                     style={styles.formInput}
                     value={disposeQty}
-                    onChangeText={setDisposeQty}
+                    onChangeText={(t) => {
+                      setDisposeQty(t);
+                      if (disposeError) setDisposeError(null);
+                    }}
                     keyboardType="decimal-pad"
                     placeholder={`Max ${fromBaseUnit(batch.quantity, unit)}`}
                     placeholderTextColor={palette.textSec}
@@ -658,6 +809,12 @@ export default function StaffInspection() {
                       </Text>
                     );
                   })()}
+
+                  {disposeError && (
+                    <Text style={[styles.disposeErr, { marginTop: 12 }]}>
+                      {disposeError}
+                    </Text>
+                  )}
 
                   <TouchableOpacity
                     style={[
@@ -713,6 +870,7 @@ export default function StaffInspection() {
                     // Default to the batch expiring soonest -- it's the one most
                     // likely being inspected, and it's the FEFO front.
                     setBatchId(item.batches[0]?.id ?? null);
+                    setFormError(null);
                     setPickerOpen(false);
                   }}
                 >
@@ -733,6 +891,63 @@ export default function StaffInspection() {
           </View>
         </View>
       </Modal>
+
+      {/* Expiry picker for the batch-details editor. Rendered at the root so it
+          stacks above the form sheet instead of behind it. */}
+      {showBatchDatePicker && Platform.OS === "android" && (
+        <DateTimePicker
+          value={batchExpiry ? (parseDate(batchExpiry) ?? new Date()) : new Date()}
+          mode="date"
+          display="default"
+          onChange={(_, date) => {
+            setShowBatchDatePicker(false);
+            if (date) setBatchExpiry(format(date, "MM/dd/yyyy"));
+          }}
+        />
+      )}
+      {showBatchDatePicker && Platform.OS === "ios" && (
+        <Modal
+          visible
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowBatchDatePicker(false)}
+        >
+          <View style={{ flex: 1, justifyContent: "flex-end" }}>
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={1}
+              onPress={() => setShowBatchDatePicker(false)}
+            />
+            <View style={styles.dateSheet}>
+              <View style={styles.dateSheetHeader}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setBatchExpiry("");
+                    setShowBatchDatePicker(false);
+                  }}
+                >
+                  <Text style={styles.dateSheetClear}>Clear</Text>
+                </TouchableOpacity>
+                <Text style={styles.dateSheetTitle}>Batch Expiry</Text>
+                <TouchableOpacity onPress={() => setShowBatchDatePicker(false)}>
+                  <Text style={styles.dateSheetDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={
+                  batchExpiry ? (parseDate(batchExpiry) ?? new Date()) : new Date()
+                }
+                mode="date"
+                display="spinner"
+                onChange={(_, date) => {
+                  if (date) setBatchExpiry(format(date, "MM/dd/yyyy"));
+                }}
+                style={{ height: 200 }}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -922,6 +1137,37 @@ function makeStyles(C_: ColorPalette) {
       marginBottom: 16,
     },
     warnText: { color: C_.textSec, fontSize: 12, flex: 1, lineHeight: 17 },
+    inlineErr: {
+      color: C.danger,
+      fontSize: 13,
+      fontWeight: "600",
+      marginBottom: 12,
+      textAlign: "center",
+    },
+    batchEditHint: {
+      color: C_.textSec,
+      fontSize: 11,
+      lineHeight: 15,
+      marginBottom: 16,
+    },
+    dateSheet: {
+      backgroundColor: C_.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingBottom: 20,
+    },
+    dateSheetHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: C_.border,
+    },
+    dateSheetTitle: { color: C_.text, fontSize: 15, fontWeight: "700" },
+    dateSheetClear: { color: C.danger, fontSize: 14, fontWeight: "600" },
+    dateSheetDone: { color: C.brand, fontSize: 14, fontWeight: "700" },
     saveBtn: {
       backgroundColor: C.brand,
       borderRadius: 14,

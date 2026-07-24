@@ -4,6 +4,7 @@ export type NotificationType =
   | "recipe_prepared"
   | "inspection_alert"
   | "out_of_stock"
+  | "staff_login"
   | "general";
 
 /**

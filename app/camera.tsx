@@ -20,6 +20,9 @@ import Svg, { G, Rect, Text as SvgText } from "react-native-svg";
 
 const CONFIDENCE_THRESHOLD = 0.5;
 const POLL_MS = 500;
+// How long the camera can scan without recognizing anything before we tell the
+// user, instead of leaving them staring at a live feed that never responds.
+const NO_DETECT_TIMEOUT_MS = 5000;
 
 function capitalize(name: string): string {
   if (!name) return name;
@@ -45,12 +48,18 @@ export default function CameraScreen() {
   const [lastDetections, setLastDetections] = useState<Detection[]>([]);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [notRecognized, setNotRecognized] = useState(false);
   const [cameraSize, setCameraSize] = useState({ width: 1, height: 1 });
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
 
   const cameraRef = useRef<CameraView>(null);
   const isCapturingRef = useRef(false);
   const isModalOpenRef = useRef(false);
+  // Timestamp of when the current "nothing detected" streak started. The polling
+  // closure is created once, so we track this in a ref rather than stale state.
+  const emptySinceRef = useRef<number | null>(null);
+  // Mirror of lastDetections readable from inside the polling closure.
+  const lastDetectionsRef = useRef<Detection[]>([]);
 
   const { addToInventory } = useInventoryStore();
   const user = useAuthStore((s) => s.user);
@@ -93,7 +102,22 @@ export default function CameraScreen() {
 
         const detected = res.data.detections ?? [];
         setDetections(detected);
-        if (detected.length > 0) setLastDetections(detected);
+        if (detected.length > 0) {
+          setLastDetections(detected);
+          lastDetectionsRef.current = detected;
+          // Something matched -- clear any "not recognizable" state/streak.
+          emptySinceRef.current = null;
+          setNotRecognized(false);
+        } else if (lastDetectionsRef.current.length === 0) {
+          // Nothing detected yet this session. Once we've been scanning empty for
+          // NO_DETECT_TIMEOUT_MS, surface a response so the user isn't left guessing.
+          const now = Date.now();
+          if (emptySinceRef.current == null) {
+            emptySinceRef.current = now;
+          } else if (now - emptySinceRef.current >= NO_DETECT_TIMEOUT_MS) {
+            setNotRecognized(true);
+          }
+        }
       } catch {
         // skip failed frames silently
       } finally {
@@ -203,6 +227,21 @@ export default function CameraScreen() {
         </Svg>
       </View>
 
+      {/* "Not recognizable" response: shown after we've scanned for a few seconds
+          without matching anything. Non-blocking so scanning keeps running and it
+          disappears the moment a product is recognized. */}
+      {notRecognized && detections.length === 0 && !isModalOpen && (
+        <View style={styles.notice} pointerEvents="none">
+          <View style={styles.noticeCard}>
+            <Text style={styles.noticeTitle}>Item not recognizable</Text>
+            <Text style={styles.noticeText}>
+              Point the camera directly at a product and hold steady. Make sure
+              it&apos;s well lit and fills the frame.
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* Top bar: back + spinner */}
       <SafeAreaView style={styles.topBar} pointerEvents="box-none">
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -306,6 +345,40 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   center: { alignItems: "center", justifyContent: "center", gap: 16 },
   permText: { color: "#fff", fontSize: 16, textAlign: "center" },
+
+  notice: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  noticeCard: {
+    backgroundColor: "rgba(0,0,0,0.78)",
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    gap: 8,
+    maxWidth: 340,
+  },
+  noticeTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  noticeText: {
+    color: "rgba(255,255,255,0.82)",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+  },
 
   topBar: {
     position: "absolute",

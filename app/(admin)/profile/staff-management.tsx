@@ -36,7 +36,9 @@ export default function StaffManagement() {
   }
 
   const activeCount = staff.filter((s) => s.isActive).length;
-  const onShiftCount = staff.filter((s) => s.shiftOn).length;
+  // shiftOn now means "currently logged in / using the app" -- set automatically
+  // on login and cleared on sign-out, no manual on-duty toggle.
+  const onlineCount = staff.filter((s) => s.shiftOn).length;
 
   return (
     <View style={styles.root}>
@@ -54,7 +56,7 @@ export default function StaffManagement() {
           <View style={styles.summaryDivider} />
           <SummaryItem label="Active" value={activeCount} C={C} />
           <View style={styles.summaryDivider} />
-          <SummaryItem label="On Shift" value={onShiftCount} C={C} />
+          <SummaryItem label="Online" value={onlineCount} C={C} />
         </View>
       )}
 
@@ -76,14 +78,23 @@ export default function StaffManagement() {
             <View style={styles.staffCard}>
               <View style={styles.avatarSmall}>
                 <Text style={styles.avatarText}>{s.fullName[0]?.toUpperCase() ?? '?'}</Text>
+                {/* Live presence: green dot when the staff member is logged in. */}
+                {s.shiftOn && <View style={styles.onlineDot} />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.staffName}>{s.fullName}</Text>
                 <Text style={styles.staffEmail}>{s.email}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: s.isActive ? C.successSoft : C.dangerSoft }]}>
-                  <Text style={[styles.statusText, { color: s.isActive ? C.success : C.danger }]}>
-                    {s.isActive ? 'Active' : 'Inactive'}
-                  </Text>
+                <View style={styles.badgeRow}>
+                  <View style={[styles.statusBadge, { backgroundColor: s.isActive ? C.successSoft : C.dangerSoft }]}>
+                    <Text style={[styles.statusText, { color: s.isActive ? C.success : C.danger }]}>
+                      {s.isActive ? 'Active' : 'Inactive'}
+                    </Text>
+                  </View>
+                  {s.shiftOn && (
+                    <View style={[styles.statusBadge, { backgroundColor: C.successSoft }]}>
+                      <Text style={[styles.statusText, { color: C.success }]}>Online</Text>
+                    </View>
+                  )}
                 </View>
               </View>
               <View style={styles.actions}>
@@ -123,10 +134,12 @@ function makeStyles(C: ColorPalette) {
     emptyText: { color: C.textSec, fontSize: 14 },
     staffCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.border, gap: 12 },
     avatarSmall: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.brandSoft, justifyContent: 'center', alignItems: 'center' },
+    onlineDot: { position: 'absolute', right: -1, bottom: -1, width: 13, height: 13, borderRadius: 7, backgroundColor: C.success, borderWidth: 2, borderColor: C.surface },
     avatarText: { color: C.brand, fontSize: 18, fontWeight: '700' },
     staffName: { color: C.text, fontSize: 15, fontWeight: '600' },
     staffEmail: { color: C.textSec, fontSize: 12, marginTop: 2 },
-    statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, marginTop: 6 },
+    badgeRow: { flexDirection: 'row', gap: 6, marginTop: 6 },
+    statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 },
     statusText: { fontSize: 11, fontWeight: '700' },
     actions: { flexDirection: 'row', gap: 8 },
     actionBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.surfaceAlt, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: C.border },

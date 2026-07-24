@@ -14,7 +14,7 @@ import {
 import { useAppDialog } from "@/lib/dialog";
 import { Feather } from "@expo/vector-icons";
 import { Spinner } from "heroui-native";
-import { signOut, changePassword, setShiftStatus } from "@/lib/firebase/auth";
+import { signOut, changePassword } from "@/lib/firebase/auth";
 import { updateProfile } from "@/lib/firebase/users";
 import { useAuthStore } from "@/store/auth";
 import { useThemeStore } from "@/store/theme";
@@ -31,7 +31,6 @@ export default function StaffProfile() {
   const palette = useColors();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const { showAlert, showConfirm } = useAppDialog();
-  const [shiftOn, setShiftOnState] = useState(user?.shiftOn ?? false);
   const [showEdit, setShowEdit] = useState(false);
   const [showPwChange, setShowPwChange] = useState(false);
   const [fullName, setFullName] = useState(user?.fullName ?? "");
@@ -70,17 +69,6 @@ export default function StaffProfile() {
         },
         "Sign Out",
       );
-    }
-  }
-
-  async function handleShiftToggle(value: boolean) {
-    setShiftOnState(value);
-    try {
-      await setShiftStatus(user!.uid, value);
-      setUser({ ...user!, shiftOn: value });
-      showToast(value ? "Marked as On Duty" : "Marked as Off Duty", "info");
-    } catch {
-      setShiftOnState(!value);
     }
   }
 
@@ -162,28 +150,6 @@ export default function StaffProfile() {
         <View style={styles.roleBadge}>
           <Feather name="user" size={12} color={palette.brand} />
           <Text style={styles.roleText}>Staff</Text>
-        </View>
-
-        {/* On Duty toggle */}
-        <View style={styles.shiftRow}>
-          <View style={styles.shiftLeft}>
-            <Feather
-              name="activity"
-              size={14}
-              color={shiftOn ? palette.success : palette.textSec}
-            />
-            <Text
-              style={[styles.shiftLabel, shiftOn && { color: palette.success }]}
-            >
-              {shiftOn ? "On Duty" : "Off Duty"}
-            </Text>
-          </View>
-          <Switch
-            value={shiftOn}
-            onValueChange={handleShiftToggle}
-            trackColor={{ false: palette.border, true: palette.success }}
-            thumbColor="#fff"
-          />
         </View>
 
         <TouchableOpacity
@@ -487,21 +453,6 @@ function makeStyles(C: ColorPalette) {
       marginBottom: 16,
     },
     roleText: { color: C.brand, fontSize: 12, fontWeight: "700" },
-    shiftRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      width: "100%",
-      backgroundColor: C.surfaceAlt,
-      borderRadius: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      marginBottom: 16,
-      borderWidth: 1,
-      borderColor: C.border,
-    },
-    shiftLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-    shiftLabel: { color: C.textSec, fontSize: 14, fontWeight: "600" },
     editBtn: {
       flexDirection: "row",
       alignItems: "center",

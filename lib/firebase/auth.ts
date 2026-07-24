@@ -12,6 +12,7 @@ import { DEFAULT_PERMISSIONS } from '@/lib/types/user';
 import { logger } from '@/lib/logger';
 import { newOperationId, errorMeta } from './errors';
 import { logAction, logCurrentUserAction } from './audit';
+import { createNotification } from './notifications';
 
 export async function signUp(
   fullName: string,
@@ -73,6 +74,30 @@ export async function signIn(email: string, password: string): Promise<string | 
       return 'This account is inactive. Please contact the admin.';
     }
 
+    // Being signed in IS being "active" now -- there's no separate on/off duty
+    // toggle. Mark the user active on login so admins can see who's currently
+    // using the app. Cleared again on sign-out.
+    await updateDoc(doc(db, 'users', uid), {
+      shiftOn: true,
+      lastLoginAt: serverTimestamp(),
+    });
+
+    // Notify admins when a STAFF member comes online. Deduped by uid, so repeated
+    // logins refresh the one unread notice instead of stacking. Fire-and-forget:
+    // a failed notification must never block the sign-in.
+    if (role === 'staff') {
+      const staffName = (data.fullName as string) || (data.email as string) || 'A staff member';
+      void createNotification(
+        'Staff online',
+        `${staffName} logged in and is now active.`,
+        'admin',
+        'staff_login',
+        uid,
+      ).catch(() => {
+        /* swallowed: logged inside createNotification */
+      });
+    }
+
     // Log directly rather than via audit(): the auth store is not populated
     // until after this returns, so audit() would record the actor as "unknown".
     void logAction({
@@ -97,7 +122,11 @@ export async function signOut(): Promise<void> {
   const uid = auth.currentUser?.uid;
   try {
     // Must be awaited BEFORE fbSignOut: once signed out, Firestore rules reject
-    // the write and the logout would never be recorded.
+    // the write. This also clears the "active" flag so the user stops showing as
+    // logged in to admins.
+    if (uid) {
+      await updateDoc(doc(db, 'users', uid), { shiftOn: false });
+    }
     await logCurrentUserAction('LOGOUT', 'Auth', 'Signed out on mobile');
     await fbSignOut(auth);
     logger.info({ message: 'User signed out', operationId, userId: uid, operation: 'auth.signOut' });
@@ -120,16 +149,5 @@ export async function changePassword(currentPassword: string, newPassword: strin
   } catch (err: unknown) {
     logger.error({ message: 'Password change failed', operationId, userId: user.uid, operation: 'auth.changePassword', ...errorMeta(err) });
     return (err as { message?: string }).message ?? 'Password change failed.';
-  }
-}
-
-export async function setShiftStatus(uid: string, shiftOn: boolean): Promise<void> {
-  const operationId = newOperationId();
-  try {
-    await updateDoc(doc(db, 'users', uid), { shiftOn });
-    logger.info({ message: 'Shift status updated', operationId, userId: uid, operation: 'auth.setShiftStatus', shiftOn });
-  } catch (err: unknown) {
-    logger.error({ message: 'Set shift status failed', operationId, userId: uid, operation: 'auth.setShiftStatus', ...errorMeta(err) });
-    throw err;
   }
 }

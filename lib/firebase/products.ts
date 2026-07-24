@@ -185,6 +185,34 @@ export async function updateBatchQuantity(
   audit("UPDATE", "Inventory", `Set batch quantity to ${newQtyDisplay} ${displayUnit}`);
 }
 
+/**
+ * Correct a batch's recorded quantity and/or expiry -- e.g. a physical count
+ * during an inspection turns up a different amount, or the expiry was entered
+ * wrong. Only the fields passed are written. Quantity is given in the display
+ * unit and stored in the base unit.
+ */
+export async function updateBatchDetails(args: {
+  batchId: string;
+  quantityDisplay?: number;
+  displayUnit: string;
+  expirationDate?: Date | null;
+  itemName?: string;
+}): Promise<void> {
+  const data: Record<string, unknown> = {};
+  if (args.quantityDisplay != null) {
+    data.quantity = toBaseUnit(args.quantityDisplay, args.displayUnit);
+  }
+  if (args.expirationDate !== undefined) {
+    data.expirationDate = args.expirationDate
+      ? Timestamp.fromDate(args.expirationDate)
+      : null;
+  }
+  if (Object.keys(data).length === 0) return;
+  await updateDoc(doc(db, "inventory_batches", args.batchId), data);
+  const label = args.itemName ? `"${args.itemName}"` : `batch ${args.batchId}`;
+  audit("UPDATE", "Inventory", `Corrected ${label} batch details during inspection`);
+}
+
 /** Create a product (e.g. when a scanned item is not yet in the catalog). */
 export async function ensureProduct(args: {
   name: string;

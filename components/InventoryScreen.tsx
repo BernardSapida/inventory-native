@@ -637,7 +637,7 @@ export default function InventoryScreen() {
               row={liveSelected}
               addedBy={addedBy}
               onToast={showToast}
-              onError={(m) => showAlert("Error", m)}
+              onError={(m, title) => showAlert(title ?? "Error", m)}
               onEdit={() => {
                 setSelected(null);
                 setTimeout(() => setEditTarget(liveSelected), 60);
@@ -669,7 +669,7 @@ export default function InventoryScreen() {
             setEditTarget(null);
             showToast(msg);
           }}
-          onError={(m) => showAlert("Error", m)}
+          onError={(m, title) => showAlert(title ?? "Error", m)}
         />
       )}
 
@@ -683,7 +683,7 @@ export default function InventoryScreen() {
             setBatchTarget(null);
             showToast(msg);
           }}
-          onError={(m) => showAlert("Error", m)}
+          onError={(m, title) => showAlert(title ?? "Error", m)}
         />
       )}
 
@@ -714,7 +714,7 @@ function ProductDetailSheet({
   row: ProductWithBatches;
   addedBy: string;
   onToast: (m: string, t?: "success" | "error" | "info") => void;
-  onError: (m: string) => void;
+  onError: (m: string, title?: string) => void;
   onEdit: () => void;
   onAddBatch: () => void;
   onDelete: () => void;
@@ -813,7 +813,7 @@ function BatchRow({
   expiry: string;
   location: string | null;
   onSave: (val: number) => Promise<void>;
-  onError: (m: string) => void;
+  onError: (m: string, title?: string) => void;
 }) {
   const palette = useColors();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -844,7 +844,7 @@ function BatchRow({
         onPress={async () => {
           const n = parseFloat(val);
           if (isNaN(n) || n < 0) {
-            onError("Invalid quantity.");
+            onError("Invalid quantity.", "Invalid");
             return;
           }
           setBusy(true);
@@ -882,7 +882,7 @@ function ProductFormModal({
   addedBy: string;
   onClose: () => void;
   onSaved: (msg: string) => void;
-  onError: (m: string) => void;
+  onError: (m: string, title?: string) => void;
 }) {
   const palette = useColors();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -927,7 +927,7 @@ function ProductFormModal({
 
   async function handleSave() {
     if (!name.trim()) {
-      onError("Product name is required.");
+      onError("Product name is required.", "Required");
       return;
     }
     // Block duplicate names (case-insensitive). When editing, the product's own
@@ -935,11 +935,11 @@ function ProductFormModal({
     const nameKey = name.trim().toLowerCase();
     const isSelf = initial?.product.name.trim().toLowerCase() === nameKey;
     if (!isSelf && existingNames.some((n) => n.trim().toLowerCase() === nameKey)) {
-      onError(`A product named "${name.trim()}" already exists.`);
+      onError(`A product named "${name.trim()}" already exists.`, "Duplicate");
       return;
     }
     if (isPcs && measurable && !unitSize) {
-      onError("Unit size is required for measurable products.");
+      onError("Unit size is required for measurable products.", "Required");
       return;
     }
     setSaving(true);
@@ -1285,7 +1285,7 @@ function AddBatchModal({
   addedBy: string;
   onClose: () => void;
   onSaved: (msg: string) => void;
-  onError: (m: string) => void;
+  onError: (m: string, title?: string) => void;
 }) {
   const palette = useColors();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -1307,14 +1307,14 @@ function AddBatchModal({
   async function handleSave() {
     const n = parseFloat(qty);
     if (isNaN(n) || n <= 0) {
-      onError("Enter a quantity greater than 0.");
+      onError("Enter a quantity greater than 0.", "Required");
       return;
     }
     let expiryDate: Date | null = null;
     if (expiry.trim()) {
       expiryDate = parseDate(expiry.trim()) ?? null;
       if (!expiryDate) {
-        onError("Invalid date. Use MM/DD/YYYY.");
+        onError("Invalid date. Use MM/DD/YYYY.", "Invalid");
         return;
       }
     }

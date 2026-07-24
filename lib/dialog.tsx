@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
-import { View } from 'react-native';
-import { Button, Dialog } from 'heroui-native';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Button } from 'heroui-native';
+import { useColors, type ColorPalette } from '@/lib/constants';
 
 type DialogBtn = {
   text: string;
@@ -26,6 +27,8 @@ const CLOSED: DialogState = { isOpen: false, title: '', message: undefined, butt
 
 export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DialogState>(CLOSED);
+  const palette = useColors();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const showAlert = useCallback((title: string, message?: string, buttons?: DialogBtn[]) => {
     setState({ isOpen: true, title, message, buttons: buttons ?? [{ text: 'OK' }] });
@@ -57,31 +60,44 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={{ showAlert, showConfirm }}>
       {children}
-      <Dialog isOpen={state.isOpen} onOpenChange={(v) => !v && dismiss()}>
-        <Dialog.Portal>
-          {/* Default `bg-backdrop` is only 20% black, so the app's dark background
-              shows through and reads as a green tint. Force a solid dark scrim. */}
-          <Dialog.Overlay isCloseOnPress={false} className="bg-black/70" />
-          <Dialog.Content isSwipeable={false}>
-            <View className="mb-4 gap-1.5">
-              <Dialog.Title>{state.title}</Dialog.Title>
-              {state.message ? <Dialog.Description>{state.message}</Dialog.Description> : null}
+      {/* Rendered inside a native <Modal> rather than a portal: a portal mounts
+          into the root React tree, which sits BENEATH any open React Native
+          <Modal> (its own native window). By being a Modal itself, this dialog is
+          presented last and therefore always stacks on top -- so alerts fired from
+          inside a form sheet no longer disappear behind it. */}
+      <Modal
+        visible={state.isOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={dismiss}
+      >
+        {/* Solid dark scrim. Not pressable-to-close, matching the old behavior --
+            an alert is dismissed by choosing a button. */}
+        <View style={styles.overlay}>
+          <View style={styles.card}>
+            <View style={styles.textBlock}>
+              <Text style={styles.title}>{state.title}</Text>
+              {state.message ? <Text style={styles.message}>{state.message}</Text> : null}
             </View>
-            <View className="flex-row justify-end gap-3">
+            <View style={styles.actions}>
               {state.buttons.map((btn, i) => (
                 <Button
                   key={i}
                   size="sm"
                   variant={variantFor(btn.style)}
-                  onPress={() => { dismiss(); btn.onPress?.(); }}
+                  onPress={() => {
+                    dismiss();
+                    btn.onPress?.();
+                  }}
                 >
                   {btn.text}
                 </Button>
               ))}
             </View>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog>
+          </View>
+        </View>
+      </Modal>
     </Ctx.Provider>
   );
 }
@@ -90,4 +106,26 @@ export function useAppDialog() {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useAppDialog must be used within DialogProvider');
   return ctx;
+}
+
+function makeStyles(C: ColorPalette) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.7)',
+      justifyContent: 'center',
+      paddingHorizontal: 32,
+    },
+    card: {
+      backgroundColor: C.surface,
+      borderRadius: 20,
+      padding: 22,
+      borderWidth: 1,
+      borderColor: C.border,
+    },
+    textBlock: { marginBottom: 18, gap: 6 },
+    title: { color: C.text, fontSize: 17, fontWeight: '700' },
+    message: { color: C.textSec, fontSize: 14, lineHeight: 20 },
+    actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  });
 }
