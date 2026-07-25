@@ -28,6 +28,7 @@ function notifIcon(type: NotificationType): keyof typeof Feather.glyphMap {
     case 'inspection_alert': return 'clipboard';
     case 'recipe_prepared': return 'book-open';
     case 'staff_login': return 'log-in';
+    case 'staff_logout': return 'log-out';
     default: return 'bell';
   }
 }
@@ -40,6 +41,7 @@ function notifColor(type: NotificationType) {
     case 'inspection_alert': return C.info;
     case 'recipe_prepared': return C.success;
     case 'staff_login': return C.success;
+    case 'staff_logout': return C.textSec;
     default: return C.textSec;
   }
 }

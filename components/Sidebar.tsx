@@ -1,11 +1,12 @@
 import BrandIcon from "@/components/BrandIcon";
 import { C, useColors } from "@/lib/constants";
 import { signOut } from "@/lib/firebase/auth";
+import { watchNotificationsForRole } from "@/lib/firebase/notifications";
 import { useSidebar } from "@/lib/sidebar";
 import { useAuthStore } from "@/store/auth";
 import { Feather } from "@expo/vector-icons";
 import { usePathname, useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   StyleSheet,
@@ -128,8 +129,18 @@ export default function Sidebar({ role }: Props) {
   const pathname = usePathname();
   const { user } = useAuthStore();
 
+  const [unreadCount, setUnreadCount] = useState(0);
+
   const translateX = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+
+  // Live unread-notification count for the badge on the Notifications item.
+  useEffect(() => {
+    const unsub = watchNotificationsForRole(role, (notifs) =>
+      setUnreadCount(notifs.length),
+    );
+    return unsub;
+  }, [role]);
 
   useEffect(() => {
     if (isOpen) {
@@ -259,6 +270,7 @@ export default function Sidebar({ role }: Props) {
         <View style={styles.navList}>
           {items.map((item) => {
             const active = isActive(item);
+            const badge = item.match === "notifications" ? unreadCount : 0;
             return (
               <TouchableOpacity
                 key={item.route}
@@ -290,11 +302,17 @@ export default function Sidebar({ role }: Props) {
                 >
                   {item.label}
                 </Text>
-                {active && (
+                {badge > 0 ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {badge > 99 ? "99+" : badge}
+                    </Text>
+                  </View>
+                ) : active ? (
                   <View
                     style={[styles.activeDot, { backgroundColor: C.brand }]}
                   />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -389,6 +407,16 @@ const styles = StyleSheet.create({
   },
   navLabel: { flex: 1, fontSize: 14, fontWeight: "600" },
   activeDot: { width: 6, height: 6, borderRadius: 3 },
+  badge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    backgroundColor: C.danger,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
   footer: {
     paddingHorizontal: 20,
     paddingVertical: 16,

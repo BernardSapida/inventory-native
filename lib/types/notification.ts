@@ -5,6 +5,7 @@ export type NotificationType =
   | "inspection_alert"
   | "out_of_stock"
   | "staff_login"
+  | "staff_logout"
   | "general";
 
 /**

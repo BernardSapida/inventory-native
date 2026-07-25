@@ -13,6 +13,7 @@ import { logger } from '@/lib/logger';
 import { newOperationId, errorMeta } from './errors';
 import { logAction, logCurrentUserAction } from './audit';
 import { createNotification } from './notifications';
+import { useAuthStore } from '@/store/auth';
 
 export async function signUp(
   fullName: string,
@@ -120,6 +121,8 @@ export async function signIn(email: string, password: string): Promise<string | 
 export async function signOut(): Promise<void> {
   const operationId = newOperationId();
   const uid = auth.currentUser?.uid;
+  // Read who is leaving BEFORE any sign-out: the store is cleared right after.
+  const current = useAuthStore.getState().user;
   try {
     // Must be awaited BEFORE fbSignOut: once signed out, Firestore rules reject
     // the write. This also clears the "active" flag so the user stops showing as
@@ -127,6 +130,22 @@ export async function signOut(): Promise<void> {
     if (uid) {
       await updateDoc(doc(db, 'users', uid), { shiftOn: false });
     }
+
+    // Mirror the login ping: tell admins when a STAFF member goes offline. Must
+    // run while still authenticated. Fire-and-forget so it never blocks logout.
+    if (uid && current?.role === 'staff') {
+      const staffName = current.fullName || current.email || 'A staff member';
+      void createNotification(
+        'Staff offline',
+        `${staffName} logged out.`,
+        'admin',
+        'staff_logout',
+        uid,
+      ).catch(() => {
+        /* swallowed: logged inside createNotification */
+      });
+    }
+
     await logCurrentUserAction('LOGOUT', 'Auth', 'Signed out on mobile');
     await fbSignOut(auth);
     logger.info({ message: 'User signed out', operationId, userId: uid, operation: 'auth.signOut' });
