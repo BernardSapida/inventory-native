@@ -14,7 +14,7 @@ interface Props {
 export default function BrandLogo({ size = 24 }: Props) {
   return (
     <Image
-      source={require("../assets/images/smartstock.png")}
+      source={require("../assets/images/logo.png")}
       style={{ width: size, height: size }}
       resizeMode="contain"
     />

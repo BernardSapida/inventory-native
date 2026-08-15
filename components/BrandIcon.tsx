@@ -16,7 +16,7 @@ interface Props {
 export default function BrandIcon({ size = 56, radius }: Props) {
   return (
     <Image
-      source={require("../assets/images/smartstock.png")}
+      source={require("../assets/images/logo.png")}
       style={{
         width: size,
         height: size,
