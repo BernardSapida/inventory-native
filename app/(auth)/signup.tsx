@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -46,7 +47,7 @@ export default function SignupScreen() {
 
     showAlert(
       'Account created',
-      "Check your email to verify your address. Your account now needs admin approval before you can sign in.",
+      "Your account now needs admin approval before you can sign in.",
       [{ text: 'OK', onPress: () => null }],
     );
   }
@@ -60,15 +61,16 @@ export default function SignupScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Back */}
-        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(auth)/login')} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color={C.text} />
-          <Text style={styles.backText}>Back to Sign In</Text>
-        </TouchableOpacity>
-
         <View style={styles.card}>
-          <Text style={styles.title}>Create account</Text>
-          <Text style={styles.subtitle}>Join SmartStock to manage inventory and more.</Text>
+          {/* Logo placeholder */}
+          <View style={styles.logoBox}>
+            <BrandLogo size={48} color={C.brand} />
+            <Text style={styles.appName}>SmartStock</Text>
+          </View>
+
+          <Text style={styles.tagline}>
+            Join SmartStock to manage inventory and more.
+          </Text>
 
           {/* Full name */}
           <Field label="Full Name" icon="user" C={C} styles={styles}>
@@ -111,6 +113,7 @@ export default function SignupScreen() {
             </TouchableOpacity>
           </Field>
 
+          {/* Create account button */}
           <TouchableOpacity
             style={[styles.createBtn, isLoading && styles.createBtnDisabled]}
             onPress={handleSignup}
@@ -122,6 +125,15 @@ export default function SignupScreen() {
             ) : (
               <Text style={styles.createBtnText}>Create Account</Text>
             )}
+          </TouchableOpacity>
+
+          {/* Navigate to sign in */}
+          <TouchableOpacity
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}
+            style={styles.linkBtn}
+          >
+            <Text style={styles.linkText}>Have an account? </Text>
+            <Text style={[styles.linkText, { color: C.brand }]}>Sign in</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -158,9 +170,7 @@ function Field({
 function makeStyles(C: ColorPalette) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: C.bg },
-    scroll: { flexGrow: 1, padding: 24, paddingTop: 60 },
-    backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 8 },
-    backText: { color: C.text, fontSize: 15 },
+    scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
     card: {
       backgroundColor: C.surface,
       borderRadius: 20,
@@ -168,8 +178,9 @@ function makeStyles(C: ColorPalette) {
       borderWidth: 1,
       borderColor: C.border,
     },
-    title: { fontSize: 22, fontWeight: '700', color: C.text, marginBottom: 6 },
-    subtitle: { color: C.textSec, fontSize: 13, marginBottom: 24 },
+    logoBox: { alignItems: 'center', marginBottom: 12 },
+    appName: { fontSize: 28, fontWeight: '700', color: C.text, marginTop: 8 },
+    tagline: { color: C.textSec, fontSize: 13, textAlign: 'center', marginBottom: 28, lineHeight: 19 },
     fieldGroup: { marginBottom: 14 },
     label: { color: C.textSec, fontSize: 12, fontWeight: '600', marginBottom: 6, letterSpacing: 0.4 },
     inputRow: {
@@ -192,8 +203,11 @@ function makeStyles(C: ColorPalette) {
       justifyContent: 'center',
       alignItems: 'center',
       marginTop: 8,
+      marginBottom: 16,
     },
     createBtnDisabled: { opacity: 0.6 },
     createBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+    linkBtn: { flexDirection: 'row', justifyContent: 'center' },
+    linkText: { color: C.textSec, fontSize: 14 },
   });
 }

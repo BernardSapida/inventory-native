@@ -28,6 +28,7 @@ function toAppUser(data: Record<string, unknown>, uid: string): AppUser {
     isActive: (data.isActive as boolean) ?? true,
     shiftOn: (data.shiftOn as boolean) ?? false,
     isArchived: (data.isArchived as boolean) ?? false,
+    mustChangePassword: (data.mustChangePassword as boolean) ?? false,
     permissions: (data.permissions as Record<string, boolean>) ?? {},
     createdAt: data.createdAt
       ? (data.createdAt as { toDate: () => Date }).toDate()
@@ -152,6 +153,18 @@ export async function updatePermissions(
     logger.info({ message: 'Permissions updated', operationId, userId: uid, operation: 'users.updatePermissions' });
   } catch (err: unknown) {
     logger.error({ message: 'Update permissions failed', operationId, userId: uid, operation: 'users.updatePermissions', ...errorMeta(err) });
+    throw err;
+  }
+}
+
+/** Clears the forced-change-password flag after the user sets their own password. */
+export async function clearMustChangePassword(uid: string): Promise<void> {
+  const operationId = newOperationId();
+  try {
+    await updateDoc(doc(db, 'users', uid), { mustChangePassword: false });
+    logger.info({ message: 'mustChangePassword cleared', operationId, userId: uid, operation: 'users.clearMustChangePassword' });
+  } catch (err: unknown) {
+    logger.error({ message: 'Clear mustChangePassword failed', operationId, userId: uid, operation: 'users.clearMustChangePassword', ...errorMeta(err) });
     throw err;
   }
 }

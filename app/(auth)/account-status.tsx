@@ -1,4 +1,5 @@
 import { useColors, ColorPalette } from '@/lib/constants';
+import { useAppDialog } from '@/lib/dialog';
 import { signOut } from '@/lib/firebase/auth';
 import { useAuthStore } from '@/store/auth';
 import { Feather } from '@expo/vector-icons';
@@ -10,6 +11,7 @@ export default function AccountStatusScreen() {
   const C = useColors();
   const styles = useMemo(() => makeStyles(C), [C]);
   const { user, reset } = useAuthStore();
+  const { showAlert } = useAppDialog();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const state =
@@ -36,6 +38,8 @@ export default function AccountStatusScreen() {
     try {
       await signOut();
       reset();
+    } catch {
+      showAlert('Sign out failed', 'Something went wrong. Please try again.');
     } finally {
       setIsSigningOut(false);
     }

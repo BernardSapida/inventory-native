@@ -41,6 +41,7 @@ export async function signUp(
       status: 'pending',
       isActive: true,
       isArchived: false,
+      mustChangePassword: false,
       shiftOn: false,
       phoneNumber: '',
       unitPreference: 'Metric (g/ml)',
@@ -156,11 +157,14 @@ export async function signOut(): Promise<void> {
   // Read who is leaving BEFORE any sign-out: the store is cleared right after.
   const current = useAuthStore.getState().user;
   try {
-    // Must be awaited BEFORE fbSignOut: once signed out, Firestore rules reject
-    // the write. This also clears the "active" flag so the user stops showing as
-    // logged in to admins.
+    // Best-effort presence clear: must run BEFORE fbSignOut (once signed out,
+    // Firestore rules reject the write), but a failure here (e.g. a pending/
+    // rejected account without full write access yet) must never block the
+    // user from actually signing out.
     if (uid) {
-      await updateDoc(doc(db, 'users', uid), { shiftOn: false });
+      await updateDoc(doc(db, 'users', uid), { shiftOn: false }).catch((err) => {
+        logger.warn({ message: 'Clearing shiftOn on sign-out failed (non-blocking)', operationId, userId: uid, operation: 'auth.signOut', ...errorMeta(err) });
+      });
     }
 
     // Mirror the login ping: tell admins when a STAFF member goes offline. Must

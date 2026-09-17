@@ -64,13 +64,22 @@ function AuthGate() {
     const inStaff = segments[0] === '(staff)';
     const inCamera = segments[0] === 'camera';
     const inAccountStatus = inAuth && segments[1] === 'account-status';
+    const inChangePassword = inAuth && segments[1] === 'change-password';
+    // login/signup are the only (auth) screens a signed-out user should sit
+    // on; account-status/change-password are only valid while signed in, so
+    // being signed out while there must still redirect - "already in the
+    // (auth) group" isn't enough on its own.
+    const inLoginOrSignup = inAuth && (segments[1] === 'login' || segments[1] === 'signup');
 
     const isApproved = !!user && user.status === 'active' && user.isActive && !user.isArchived;
+    const mustChangePassword = isApproved && !!user?.mustChangePassword;
 
     if (!user) {
-      if (!inAuth) router.replace('/(auth)/login');
+      if (!inLoginOrSignup) router.replace('/(auth)/login');
     } else if (!isApproved) {
       if (!inAccountStatus) router.replace('/(auth)/account-status');
+    } else if (mustChangePassword) {
+      if (!inChangePassword) router.replace('/(auth)/change-password');
     } else if (user.role === 'admin') {
       if (!inAdmin && !inCamera) router.replace('/(admin)');
     } else if (user.role === 'staff') {
