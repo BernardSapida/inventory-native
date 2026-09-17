@@ -20,6 +20,9 @@ function toAppUser(data: Record<string, unknown>, uid: string): AppUser {
     email: (data.email as string) ?? '',
     fullName: (data.fullName as string) ?? '',
     role: ((data.role as string) ?? 'staff') as 'admin' | 'staff',
+    // Docs created before this field existed are treated as already-approved
+    // (see inventory-backend/scripts/backfill_user_status.py).
+    status: ((data.status as string) ?? 'active') as AppUser['status'],
     phoneNumber: (data.phoneNumber as string) ?? '',
     unitPreference: (data.unitPreference as string) ?? 'Metric (g/ml)',
     isActive: (data.isActive as boolean) ?? true,

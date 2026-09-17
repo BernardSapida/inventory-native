@@ -1,5 +1,6 @@
 import {
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   updatePassword,
@@ -15,13 +16,19 @@ import { logAction, logCurrentUserAction } from './audit';
 import { createNotification } from './notifications';
 import { useAuthStore } from '@/store/auth';
 
+/**
+ * Self-service registration. Public signup always creates a `staff` account -
+ * admin access is never self-granted, only promoted by an existing admin from
+ * the web Settings > Users tab. The new account starts `status: 'pending'`
+ * and can't sign in until an admin approves it (see signIn()).
+ */
 export async function signUp(
   fullName: string,
   email: string,
-  password: string,
-  role: 'admin' | 'staff'
+  password: string
 ): Promise<string | null> {
   const operationId = newOperationId();
+  const role = 'staff' as const;
   try {
     const credential = await createUserWithEmailAndPassword(auth, email.trim(), password.trim());
     const uid = credential.user.uid;
@@ -30,15 +37,28 @@ export async function signUp(
       uid,
       fullName: fullName.trim(),
       email: email.trim(),
-      role: role.toLowerCase(),
+      role,
+      status: 'pending',
       isActive: true,
       isArchived: false,
       shiftOn: false,
       phoneNumber: '',
       unitPreference: 'Metric (g/ml)',
-      permissions: DEFAULT_PERMISSIONS[role] ?? DEFAULT_PERMISSIONS.staff,
+      permissions: DEFAULT_PERMISSIONS[role],
       photoUrl: '',
       createdAt: serverTimestamp(),
+    });
+
+    await sendEmailVerification(credential.user).catch(() => {});
+
+    void createNotification(
+      'New signup pending approval',
+      `${fullName.trim() || email.trim()} registered and is waiting for approval.`,
+      'admin',
+      'signup_pending',
+      uid,
+    ).catch(() => {
+      /* swallowed: logged inside createNotification */
     });
 
     logger.info({ message: 'User registered', operationId, userId: uid, operation: 'auth.signUp', role });
@@ -69,10 +89,22 @@ export async function signIn(email: string, password: string): Promise<string | 
       logger.warn({ message: 'Sign in rejected: invalid role', operationId, userId: uid, operation: 'auth.signIn', role });
       return 'Access denied: invalid role.';
     }
-    if (!data.isActive) {
-      await fbSignOut(auth);
-      logger.warn({ message: 'Sign in rejected: inactive account', operationId, userId: uid, operation: 'auth.signIn' });
-      return 'This account is inactive. Please contact the admin.';
+
+    // A pending/rejected/deactivated account is NOT rejected here - sign-in
+    // succeeds and AuthGate (app/_layout.tsx) routes it to the account-status
+    // screen instead of the app, matching the admin web's flow.
+    const status = (data.status as string) ?? 'active';
+    const isApproved = status === 'active' && data.isActive === true && !data.isArchived;
+    if (!isApproved) {
+      logger.warn({
+        message: 'Sign in allowed but account is not approved/active',
+        operationId,
+        userId: uid,
+        operation: 'auth.signIn',
+        status,
+        isActive: data.isActive,
+      });
+      return null;
     }
 
     // Being signed in IS being "active" now -- there's no separate on/off duty

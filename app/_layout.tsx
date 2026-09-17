@@ -12,7 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DialogProvider } from '@/lib/dialog';
 import 'react-native-reanimated';
 import '../global.css';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase/config';
 import { getUserById } from '@/lib/firebase/users';
 import { watchSpoonDefaults } from '@/lib/firebase/settings';
@@ -31,14 +31,11 @@ function AuthGate() {
       if (fbUser) {
         setFirebaseUser(fbUser);
         try {
+          // A pending/rejected/deactivated account is NOT signed out here -
+          // the redirect effect below routes it to the account-status screen
+          // instead, so the user sees why rather than being silently booted.
           const appUser = await getUserById(fbUser.uid);
-          if (appUser && !appUser.isActive) {
-            await signOut(auth);
-            setUser(null);
-            setFirebaseUser(null);
-          } else {
-            setUser(appUser);
-          }
+          setUser(appUser);
         } catch {
           setUser(null);
         }
@@ -66,9 +63,14 @@ function AuthGate() {
     const inAdmin = segments[0] === '(admin)';
     const inStaff = segments[0] === '(staff)';
     const inCamera = segments[0] === 'camera';
+    const inAccountStatus = inAuth && segments[1] === 'account-status';
+
+    const isApproved = !!user && user.status === 'active' && user.isActive && !user.isArchived;
 
     if (!user) {
       if (!inAuth) router.replace('/(auth)/login');
+    } else if (!isApproved) {
+      if (!inAccountStatus) router.replace('/(auth)/account-status');
     } else if (user.role === 'admin') {
       if (!inAdmin && !inCamera) router.replace('/(admin)');
     } else if (user.role === 'staff') {

@@ -16,14 +16,11 @@ import {
   View,
 } from 'react-native';
 
-type Role = 'admin' | 'staff';
-
 export default function SignupScreen() {
   const router = useRouter();
   const C = useColors();
   const styles = useMemo(() => makeStyles(C), [C]);
   const { showAlert } = useAppDialog();
-  const [role, setRole] = useState<Role>('staff');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +36,7 @@ export default function SignupScreen() {
     }
 
     setIsLoading(true);
-    const error = await signUp(fullName, email, password, role);
+    const error = await signUp(fullName, email, password);
     setIsLoading(false);
 
     if (error) {
@@ -47,9 +44,11 @@ export default function SignupScreen() {
       return;
     }
 
-    showAlert('Success', 'Account created successfully.', [
-      { text: 'Thank You', onPress: () => null },
-    ]);
+    showAlert(
+      'Account created',
+      "Check your email to verify your address. Your account now needs admin approval before you can sign in.",
+      [{ text: 'OK', onPress: () => null }],
+    );
   }
 
   return (
@@ -70,28 +69,6 @@ export default function SignupScreen() {
         <View style={styles.card}>
           <Text style={styles.title}>Create account</Text>
           <Text style={styles.subtitle}>Join SmartStock to manage inventory and more.</Text>
-
-          {/* Role selector */}
-          <View style={styles.roleRow}>
-            {(['admin', 'staff'] as Role[]).map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[styles.roleBtn, role === r && styles.roleBtnActive]}
-                onPress={() => setRole(r)}
-                activeOpacity={0.8}
-              >
-                <Feather
-                  name={r === 'admin' ? 'shield' : 'user'}
-                  size={16}
-                  color={role === r ? C.brand : C.textSec}
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={[styles.roleBtnText, role === r && { color: C.brand }]}>
-                  {r.charAt(0).toUpperCase() + r.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
 
           {/* Full name */}
           <Field label="Full Name" icon="user" C={C} styles={styles}>
@@ -193,20 +170,6 @@ function makeStyles(C: ColorPalette) {
     },
     title: { fontSize: 22, fontWeight: '700', color: C.text, marginBottom: 6 },
     subtitle: { color: C.textSec, fontSize: 13, marginBottom: 24 },
-    roleRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-    roleBtn: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 12,
-      borderRadius: 12,
-      borderWidth: 1.5,
-      borderColor: C.border,
-      backgroundColor: C.surfaceAlt,
-    },
-    roleBtnActive: { borderColor: C.brand, backgroundColor: C.brandSoft },
-    roleBtnText: { color: C.textSec, fontWeight: '600', fontSize: 14 },
     fieldGroup: { marginBottom: 14 },
     label: { color: C.textSec, fontSize: 12, fontWeight: '600', marginBottom: 6, letterSpacing: 0.4 },
     inputRow: {

@@ -6,6 +6,7 @@ export type NotificationType =
   | "out_of_stock"
   | "staff_login"
   | "staff_logout"
+  | "signup_pending"
   | "general";
 
 /**

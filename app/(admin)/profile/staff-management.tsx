@@ -85,11 +85,21 @@ export default function StaffManagement() {
                 <Text style={styles.staffName}>{s.fullName}</Text>
                 <Text style={styles.staffEmail}>{s.email}</Text>
                 <View style={styles.badgeRow}>
-                  <View style={[styles.statusBadge, { backgroundColor: s.isActive ? C.successSoft : C.dangerSoft }]}>
-                    <Text style={[styles.statusText, { color: s.isActive ? C.success : C.danger }]}>
-                      {s.isActive ? 'Active' : 'Inactive'}
-                    </Text>
-                  </View>
+                  {s.status === 'pending' ? (
+                    <View style={[styles.statusBadge, { backgroundColor: C.warningSoft }]}>
+                      <Text style={[styles.statusText, { color: C.warning }]}>Pending</Text>
+                    </View>
+                  ) : s.status === 'rejected' ? (
+                    <View style={[styles.statusBadge, { backgroundColor: C.dangerSoft }]}>
+                      <Text style={[styles.statusText, { color: C.danger }]}>Rejected</Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.statusBadge, { backgroundColor: s.isActive ? C.successSoft : C.dangerSoft }]}>
+                      <Text style={[styles.statusText, { color: s.isActive ? C.success : C.danger }]}>
+                        {s.isActive ? 'Active' : 'Inactive'}
+                      </Text>
+                    </View>
+                  )}
                   {s.shiftOn && (
                     <View style={[styles.statusBadge, { backgroundColor: C.successSoft }]}>
                       <Text style={[styles.statusText, { color: C.success }]}>Online</Text>
