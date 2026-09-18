@@ -11,7 +11,7 @@ import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firest
 import { auth, db } from './config';
 import { DEFAULT_PERMISSIONS } from '@/lib/types/user';
 import { logger } from '@/lib/logger';
-import { newOperationId, errorMeta } from './errors';
+import { newOperationId, errorMeta, authErrorMessage, isFirebaseError } from './errors';
 import { logAction, logCurrentUserAction } from './audit';
 import { createNotification } from './notifications';
 import { useAuthStore } from '@/store/auth';
@@ -66,7 +66,7 @@ export async function signUp(
     return null;
   } catch (err: unknown) {
     logger.error({ message: 'Sign up failed', operationId, operation: 'auth.signUp', ...errorMeta(err) });
-    return (err as { message?: string }).message ?? 'Registration failed.';
+    return authErrorMessage(err);
   }
 }
 
@@ -147,7 +147,7 @@ export async function signIn(email: string, password: string): Promise<string | 
     return null;
   } catch (err: unknown) {
     logger.error({ message: 'Sign in failed', operationId, operation: 'auth.signIn', ...errorMeta(err) });
-    return (err as { message?: string }).message ?? 'Sign in failed.';
+    return authErrorMessage(err);
   }
 }
 
@@ -203,6 +203,11 @@ export async function changePassword(currentPassword: string, newPassword: strin
     return null;
   } catch (err: unknown) {
     logger.error({ message: 'Password change failed', operationId, userId: user.uid, operation: 'auth.changePassword', ...errorMeta(err) });
-    return (err as { message?: string }).message ?? 'Password change failed.';
+    // Reauth failures here mean "current password wrong", not "email/password
+    // wrong" (authErrorMessage's generic mapping doesn't fit this context).
+    if (isFirebaseError(err) && (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password')) {
+      return 'Your current password is incorrect.';
+    }
+    return authErrorMessage(err);
   }
 }
