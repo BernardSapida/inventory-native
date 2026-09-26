@@ -3,10 +3,30 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import { useAppDialog } from '@/lib/dialog';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { Spinner } from 'heroui-native';
-import { watchActiveStaff, setUserActiveStatus, archiveStaff } from '@/lib/firebase/users';
+import { Spinner, Select } from 'heroui-native';
+import { watchActiveStaff, setUserActiveStatus, archiveStaff, approveUser, rejectUser } from '@/lib/firebase/users';
 import { AppUser } from '@/lib/types/user';
 import { useColors, ColorPalette } from '@/lib/constants';
+
+type DisplayStatus = 'pending' | 'rejected' | 'active' | 'inactive';
+
+function displayStatus(s: AppUser): DisplayStatus {
+  if (s.status === 'pending') return 'pending';
+  if (s.status === 'rejected') return 'rejected';
+  return s.isActive ? 'active' : 'inactive';
+}
+
+const STATUS_ORDER: Record<DisplayStatus, number> = { pending: 0, active: 1, inactive: 2, rejected: 3 };
+
+type StatusFilterKey = 'all' | DisplayStatus;
+
+const STATUS_FILTERS: { value: StatusFilterKey; label: string }[] = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'rejected', label: 'Rejected' },
+];
 
 export default function StaffManagement() {
   const router = useRouter();
@@ -15,6 +35,7 @@ export default function StaffManagement() {
   const { showConfirm } = useAppDialog();
   const [staff, setStaff] = useState<AppUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StatusFilterKey>('all');
 
   useEffect(() => {
     const unsub = watchActiveStaff((data) => { setStaff(data); setIsLoading(false); });
@@ -35,10 +56,26 @@ export default function StaffManagement() {
     showConfirm('Archive Staff', `Archive ${s.fullName}? They will lose app access.`, () => archiveStaff(s.uid), 'Archive');
   }
 
+  async function handleApprove(s: AppUser) {
+    showConfirm('Approve Staff', `Approve ${s.fullName}? They will be able to sign in.`, () => approveUser(s.uid), 'Approve');
+  }
+
+  async function handleReject(s: AppUser) {
+    showConfirm('Reject Staff', `Reject ${s.fullName}?`, () => rejectUser(s.uid), 'Reject');
+  }
+
   const activeCount = staff.filter((s) => s.isActive).length;
   // shiftOn now means "currently logged in / using the app" -- set automatically
   // on login and cleared on sign-out, no manual on-duty toggle.
   const onlineCount = staff.filter((s) => s.shiftOn).length;
+
+  const visibleStaff = useMemo(() => {
+    const list = statusFilter === 'all' ? staff : staff.filter((s) => displayStatus(s) === statusFilter);
+    return [...list].sort((a, b) => {
+      const diff = STATUS_ORDER[displayStatus(a)] - STATUS_ORDER[displayStatus(b)];
+      return diff !== 0 ? diff : a.fullName.localeCompare(b.fullName);
+    });
+  }, [staff, statusFilter]);
 
   return (
     <View style={styles.root}>
@@ -60,18 +97,40 @@ export default function StaffManagement() {
         </View>
       )}
 
+      {!isLoading && (
+        <View style={styles.filterRow}>
+          <Select
+            value={STATUS_FILTERS.find((f) => f.value === statusFilter)}
+            onValueChange={(opt) => setStatusFilter((opt as { value: StatusFilterKey }).value)}
+          >
+            <Select.Trigger style={styles.selectTrigger}>
+              <Select.Value style={styles.selectValue} placeholder="All statuses" />
+              <Select.TriggerIndicator iconProps={{ color: C.textSec, size: 16 }} />
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Overlay />
+              <Select.Content presentation="popover" width="trigger">
+                {STATUS_FILTERS.map((f) => (
+                  <Select.Item key={f.value} value={f.value} label={f.label} />
+                ))}
+              </Select.Content>
+            </Select.Portal>
+          </Select>
+        </View>
+      )}
+
       {isLoading ? (
         <View style={styles.center}><Spinner size="lg" /></View>
       ) : (
         <FlatList
-          data={staff}
+          data={visibleStaff}
           keyExtractor={(s) => s.uid}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.center}>
               <Feather name="users" size={40} color={C.border} />
-              <Text style={styles.emptyText}>No active staff found</Text>
+              <Text style={styles.emptyText}>No staff match this filter</Text>
             </View>
           }
           renderItem={({ item: s }) => (
@@ -108,12 +167,25 @@ export default function StaffManagement() {
                 </View>
               </View>
               <View style={styles.actions}>
-                <TouchableOpacity onPress={() => toggleActive(s)} style={styles.actionBtn}>
-                  <Feather name={s.isActive ? 'user-x' : 'user-check'} size={16} color={s.isActive ? C.warning : C.success} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleArchive(s)} style={styles.actionBtn}>
-                  <Feather name="archive" size={16} color={C.danger} />
-                </TouchableOpacity>
+                {s.status === 'pending' ? (
+                  <>
+                    <TouchableOpacity onPress={() => handleReject(s)} style={styles.actionBtn}>
+                      <Feather name="x" size={16} color={C.danger} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleApprove(s)} style={styles.actionBtn}>
+                      <Feather name="check" size={16} color={C.success} />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity onPress={() => toggleActive(s)} style={styles.actionBtn}>
+                      <Feather name={s.isActive ? 'user-x' : 'user-check'} size={16} color={s.isActive ? C.warning : C.success} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleArchive(s)} style={styles.actionBtn}>
+                      <Feather name="archive" size={16} color={C.danger} />
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </View>
           )}
@@ -140,6 +212,9 @@ function makeStyles(C: ColorPalette) {
     summaryCard: { flexDirection: 'row', backgroundColor: C.surface, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, padding: 16, borderWidth: 1, borderColor: C.border },
     summaryDivider: { width: 1, backgroundColor: C.border, marginVertical: 4 },
     list: { paddingHorizontal: 20, paddingBottom: 40 },
+    filterRow: { paddingHorizontal: 20, paddingBottom: 16 },
+    selectTrigger: { alignSelf: 'flex-start', minWidth: 170 },
+    selectValue: { fontSize: 14, fontWeight: '600' },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, gap: 12 },
     emptyText: { color: C.textSec, fontSize: 14 },
     staffCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.border, gap: 12 },

@@ -8,7 +8,12 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "prebuild:android": "expo prebuild --platform android",
+    "emulator": "emulator -avd Pixel_10_Pro",
+    "apk:build": "node -e \"require('fs').rmSync('android',{recursive:true,force:true})\" && expo prebuild --platform android && cd android && gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64",
+    "apk:install": "adb install -r android/app/build/outputs/apk/release/Finance.apk",
+    "apk:launch": "adb shell monkey -p com.bernardsapida.myApplication -c android.intent.category.LAUNCHER 1"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

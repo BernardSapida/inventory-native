@@ -99,6 +99,28 @@ export async function setUserActiveStatus(uid: string, isActive: boolean): Promi
   }
 }
 
+export async function approveUser(uid: string): Promise<void> {
+  const operationId = newOperationId();
+  try {
+    await updateDoc(doc(db, 'users', uid), { status: 'active', isActive: true, updatedAt: serverTimestamp() });
+    logger.info({ message: 'User approved', operationId, userId: uid, operation: 'users.approveUser' });
+  } catch (err: unknown) {
+    logger.error({ message: 'Approve user failed', operationId, userId: uid, operation: 'users.approveUser', ...errorMeta(err) });
+    throw err;
+  }
+}
+
+export async function rejectUser(uid: string): Promise<void> {
+  const operationId = newOperationId();
+  try {
+    await updateDoc(doc(db, 'users', uid), { status: 'rejected', updatedAt: serverTimestamp() });
+    logger.info({ message: 'User rejected', operationId, userId: uid, operation: 'users.rejectUser' });
+  } catch (err: unknown) {
+    logger.error({ message: 'Reject user failed', operationId, userId: uid, operation: 'users.rejectUser', ...errorMeta(err) });
+    throw err;
+  }
+}
+
 export async function archiveStaff(uid: string): Promise<void> {
   const operationId = newOperationId();
   try {
