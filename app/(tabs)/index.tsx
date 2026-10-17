@@ -218,7 +218,7 @@ export default function StockManagementScreen() {
         )}
       </ScrollView>
 
-      {/* AI Scan FAB */}
+      {/* AI Scan FAB (temporarily hidden)
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push("/camera")}
@@ -227,6 +227,7 @@ export default function StockManagementScreen() {
         <Feather name="camera" size={18} color={C.text} />
         <Text style={styles.fabLabel}>AI Scan</Text>
       </TouchableOpacity>
+      */}
     </SafeAreaView>
   );
 }
