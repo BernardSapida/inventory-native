@@ -282,12 +282,13 @@ export default function InventoryScreen() {
         title="Inventory"
         right={
           <View style={styles.headerActions}>
-            <TouchableOpacity
+            {/* AI Scan needs the backend; hidden until it is deployed. */}
+            {/* <TouchableOpacity
               style={styles.headerBtn}
               onPress={() => router.push("/camera" as never)}
             >
               <Feather name="camera" size={20} color={palette.text} />
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             <TouchableOpacity
               style={styles.headerBtn}
               onPress={() => setAddOpen(true)}
